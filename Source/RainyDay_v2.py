@@ -141,9 +141,8 @@ fields with Stochastic Storm Transposition for assessment of rainfall-driven haz
 start = time.time()
 parameterfile='ttt'
 
-#parameterfile=np.str(sys.argv[1])
-#parameterfile='/Users/daniel/Google_Drive/PapersandReports/MyPapers/FloodStructure/Analyses/StageIV_Turkey72hour.sst'
-parameterfile='/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/SourceCode/RainyDayExample.sst'
+parameterfile=np.str(sys.argv[1])
+#parameterfile='/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/SourceCode/RainyDayExample.sst'
 
 if os.path.isfile(parameterfile)==False:
     sys.exit("You either didn't specify a parameter file, or it doesn't exist.")
