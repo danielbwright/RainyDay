@@ -8,7 +8,7 @@
 #==============================================================================
 #    Welcome to RainyDay, a framework for coupling remote sensing precipitation
 #    fields with Stochastic Storm Transposition for assessment of rainfall-driven hazards.
-#    Copyright (C) 2015  Daniel Benjamin Wright (danielb.wright@gwsic.edu)
+#    Copyright (C) 2015  Daniel Benjamin Wright (danielb.wright@gwisc.edu)
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -54,9 +54,10 @@ from netCDF4 import Dataset, num2date, date2num
 import warnings
 
 # plotting stuff, really only needed for diagnostic plots
-import matplotlib.pyplot as plt
 import matplotlib
-from matplotlib.colors import LogNorm 
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 
 # import RainyDay functions
 import RainyDay_utilities.RainyDay_functions as RainyDay
@@ -142,7 +143,7 @@ start = time.time()
 parameterfile='ttt'
 
 parameterfile=np.str(sys.argv[1])
-#parameterfile='/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/SourceCode/RainyDayExample.sst'
+#parameterfile='/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDayExample.sst'
 
 if os.path.isfile(parameterfile)==False:
     sys.exit("You either didn't specify a parameter file, or it doesn't exist.")
@@ -475,7 +476,7 @@ if rotation==True:
         if int(spversion[1])<9:
             sys.exit('Your version of Scipy is too old to handle the rotation scheme.  Either do not use rotation or update Scipy.')
   
-print "ADD A CELL CENTERING OPTION"
+# should add a "cell-centering" option!
 
         
 #==============================================================================
@@ -523,7 +524,7 @@ if CreateCatalog:
  
     rainprop.subextent,rainprop.subind,rainprop.subdimensions=RainyDay.findsubbox(inarea,rainprop)
     
-    subgrid,gx,gy=RainyDay.creategrids(rainprop)
+    #subgrid,gx,gy=RainyDay.creategrids(rainprop)
     ingridx,ingridy=np.meshgrid(np.arange(rainprop.subextent[0],rainprop.subextent[1]-rainprop.spatialres[0]/1000,rainprop.spatialres[0]),np.arange(rainprop.subextent[3],rainprop.subextent[2]+rainprop.spatialres[1]/1000,-rainprop.spatialres[1]))        
 
     lonrange=ingridx[0,:]
@@ -682,7 +683,7 @@ if CreateCatalog==True:
     start = time.time()
     for i in filerange: 
         infile=flist[i]
-        inrain,intime,inlatitude,inlongitude=RainyDay.readnetcdf(infile)
+        inrain,intime,inlatitude,inlongitude=RainyDay.readnetcdf(infile,rainprop.subind)
         inrain[inrain<0.]=np.nan
         print 'Processing file '+str(i+1)+' out of '+str(len(flist))+'('+str(100*(i+1)/len(flist))+'%): '+infile
 
@@ -690,7 +691,8 @@ if CreateCatalog==True:
         for k in np.arange(0,24*60/rainprop.timeres,1):     
             starttime=intime[k]-np.timedelta64(tempdur,'h')
             raintime[-1]=intime[k]
-            rainarray[-1,:]=np.reshape(inrain[k,subgrid],(rainprop.subdimensions[0],rainprop.subdimensions[1]))
+            #rainarray[-1,:]=np.reshape(inrain[k,subgrid],(rainprop.subdimensions[0],rainprop.subdimensions[1]))
+            rainarray[-1,:]=np.reshape(inrain[k,:],(rainprop.subdimensions[0],rainprop.subdimensions[1]))
             #rainarray[-1,:]=inrain[k,:]            
             subtimeind=np.where(np.logical_and(raintime>starttime,raintime<=raintime[-1]))
             subtime=np.arange(raintime[-1],starttime,-timestep)[::-1]
@@ -1369,7 +1371,7 @@ if Scenarios==True:
         innerextent=deepcopy(rainprop.subextent)
         innerind=deepcopy(rainprop.subind)
              
-        subgrid,gx,gy=RainyDay.creategrids(rainprop)
+        #subgrid,gx,gy=RainyDay.creategrids(rainprop)
     
         tlen=1440*pretime/rainprop.timeres
         
@@ -1393,13 +1395,13 @@ if Scenarios==True:
 
             for j in range(0,len(tlist)):
                 print 'Pre-pending rainfall with file '+tlist[j]
-                inrain,intime,_,_=RainyDay.readnetcdf(tlist[j])
+                inrain,intime,_,_=RainyDay.readnetcdf(tlist[j],rainprop.subind)
                 inrain[inrain<0.]=np.nan
                 
                 for k in range(0,24*60/rainprop.timeres):
                     if np.in1d(intime[k],cattime[i,:])[0]: 
                         cattime[i,j*24*60/rainprop.timeres:j*24*60/rainprop.timeres+24*60/rainprop.timeres]=intime
-                        precat[i,j*24*60/rainprop.timeres:j*24*60/rainprop.timeres+24*60/rainprop.timeres,:]=np.reshape(inrain[:,subgrid],(24*60/rainprop.timeres,rainprop.subdimensions[0],rainprop.subdimensions[1]))
+                        precat[i,j*24*60/rainprop.timeres:j*24*60/rainprop.timeres+24*60/rainprop.timeres,:]=np.reshape(inrain,(24*60/rainprop.timeres,rainprop.subdimensions[0],rainprop.subdimensions[1]))
     else:
         precat=np.zeros((catrain.shape[0],0,catrain.shape[2],catrain.shape[3]),dtype='float32')
 

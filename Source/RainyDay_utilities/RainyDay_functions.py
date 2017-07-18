@@ -520,12 +520,17 @@ def writerealization(rlz,nrealizations,writename,outrain,writemax,writestorm,wri
 #==============================================================================
 # READ RAINFALL FILE FROM NETCDF
 #==============================================================================
-def readnetcdf(rfile):
+def readnetcdf(rfile,inbounds=False):
     infile=Dataset(rfile,'r')
-    outrain=np.array(infile.variables['rainrate'][:])
+    if np.any(inbounds==False):
+        outrain=np.array(infile.variables['rainrate'][:])
+        outlatitude=np.array(infile.variables['latitude'][:])
+        outlongitude=np.array(infile.variables['longitude'][:])
+    else:
+        outrain=np.array(infile.variables['rainrate'][:,inbounds[3]:inbounds[2]+1,inbounds[0]:inbounds[1]+1])
+        outlatitude=np.array(infile.variables['latitude'][inbounds[3]:inbounds[2]+1])
+        outlongitude=np.array(infile.variables['longitude'][inbounds[0]:inbounds[1]+1])    
     outtime=np.array(infile.variables['time'][:],dtype='datetime64[m]')
-    outlatitude=np.array(infile.variables['latitude'][:])
-    outlongitude=np.array(infile.variables['longitude'][:])
     infile.close()
     return outrain,outtime,outlatitude,outlongitude
     
