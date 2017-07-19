@@ -256,6 +256,12 @@ elif resampletype.lower()=='intensity':
         sys.exit('NBINS is not an integer!')
 else:
     sys.exit("You specified an unknown resampling method")
+    
+do_deterministic=cardinfo[cardinfo[:,0]=="DETERMINISTIC",1][0]
+if do_deterministic.lower():
+    deterministic=True
+else:
+    deterministic=False
 
     
 lim1=np.float32(cardinfo[cardinfo[:,0]=="LATITUDE_MIN",1][0])
@@ -295,7 +301,7 @@ FreqFile=fullpath+'/'+scenarioname+'.FreqAnalysis'
 Scenarios=cardinfo[cardinfo[:,0]=="SCENARIOS",1][0]
 if Scenarios.lower()=='true':
     Scenarios=True
-    WriteName=wd+'/'+scenarioname+'/Scenarios'
+    WriteName=wd+'/'+scenarioname+'/Realizations'
     os.system('mkdir %s' %(WriteName))
     WriteName=WriteName+'/'+scenarioname
 else:
@@ -368,7 +374,7 @@ elif len(userdistr.split(','))==3:
 else:
     sys.exit("There is a problem with the INTENSDISTR entry!")
  
-if Scenarios==True:
+if Scenarios:
     if np.any(np.core.defchararray.find(cardinfo[:,0],"SPINPERIOD")>-1):
         pretime=cardinfo[cardinfo[:,0]=="SPINPERIOD",1][0]   
          
@@ -443,8 +449,8 @@ else:
 rotation=False
 if np.any(np.core.defchararray.find(cardinfo[:,0],"ROTATIONANGLE")>-1):
     rotangle=cardinfo[cardinfo[:,0]=="ROTATIONANGLE",1][0]
-    if rotangle.lower()=='none':
-        rotation=False
+    if rotangle.lower()=='none' or areatype.lower()=="point":
+        rotation=False            
     else:
         rotation=True
         if len(rotangle.lower().split(','))!=3:
@@ -467,7 +473,7 @@ if np.any(np.core.defchararray.find(cardinfo[:,0],"ROTATIONANGLE")>-1):
             if minangle>0. or maxangle<0.:
                 sys.exit('The minimum angle should be negative and the maximum angle should be positive.')
     
-if rotation==True:
+if rotation:
     print "storm rotation will be used..."
     delarray=[]
 
@@ -506,7 +512,6 @@ print "SHOULD CHECK FOR ROBUSTNESS OF NODATA LATER ON"
 # CREATE NEW STORM CATALOG, IF DESIRED
 #==============================================================================  
 if CreateCatalog:
-    print "NEED TO DEAL WITH THIS..."
     print "creating a new storm catalog..."
     
     flist=RainyDay.createfilelist(inpath,includeyears,excludemonths)
@@ -642,7 +647,7 @@ ylen=rainprop.subdimensions[0]-maskheight+1
 # STEP 1: CREATE STORM CATALOG
 #################################################################################
 
-if CreateCatalog==True: 
+if CreateCatalog: 
     print "reading rainfall files..."
     
     #==============================================================================
@@ -683,7 +688,7 @@ if CreateCatalog==True:
     start = time.time()
     for i in filerange: 
         infile=flist[i]
-        inrain,intime,inlatitude,inlongitude=RainyDay.readnetcdf(infile,rainprop.subind)
+        inrain,intime,inlatitude,inlongitude=RainyDay.readnetcdf(infile,inbounds=rainprop.subind)
         inrain[inrain<0.]=np.nan
         print 'Processing file '+str(i+1)+' out of '+str(len(flist))+'('+str(100*(i+1)/len(flist))+'%): '+infile
 
@@ -698,10 +703,7 @@ if CreateCatalog==True:
             subtime=np.arange(raintime[-1],starttime,-timestep)[::-1]
             temparray=np.squeeze(np.nansum(rainarray[subtimeind,:],axis=1))
             
-
-            if weavecheck:
-                rainmax,ycat,xcat=RainyDay.catalogweave(temparray,trimmask,np.int(xlen),np.int(ylen),np.int(maskheight),np.int(maskwidth),rainsum)
-            elif numbacheck:
+            if numbacheck:
                 rainmax,ycat,xcat=RainyDay.catalogNumba(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)
             else:
                 rainmax,ycat,xcat=RainyDay.catalogAlt(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)
@@ -918,7 +920,7 @@ if resampletype=='intensity':
 # DO YOU WANT TO CREATE DIAGNOSTIC PLOTS?
 #==============================================================================
 
-if DoDiagnostics==True:
+if DoDiagnostics:
     
     # this is for a very specific situation....
     if np.any(np.isnan(catmax)):
@@ -1051,7 +1053,7 @@ if DoDiagnostics==True:
     plt.close('all')
         
          
-if DoDiagMovies==True:
+if DoDiagMovies:
     "preparing diagnostic movies..."
     
     if rainprop.subdimensions[0]>rainprop.subdimensions[1]:
@@ -1199,7 +1201,7 @@ for i in range(0,nstorms):
 
     passrain=np.nansum(catrain[i,:],axis=0)
 
-    if rotation==True: 
+    if rotation: 
         print 'rotating storms for transposition, '+str(100*(i+1)/nstorms)+'% complete...'
         delarray.append([])
          
@@ -1223,8 +1225,8 @@ for i in range(0,nstorms):
             delarray[i].append(delaunay)
             interp=sp.interpolate.LinearNDInterpolator(delaunay,passrain.flatten(),fill_value=0.)
             tpass=np.reshape(interp(outgrid),rainprop.subdimensions)
-        
             whichrain[np.logical_and(whichstorms==i,anglebins==cbin)]=RainyDay.SSTalt(tpass,whichx[np.logical_and(whichstorms==i,anglebins==cbin)],whichy[np.logical_and(whichstorms==i,anglebins==cbin)],trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth)*rainprop.timeres/60./mnorm
+            binctr=binctr+1
     else:
         whichrain[whichstorms==i]=RainyDay.SSTalt(passrain,whichx[whichstorms==i],whichy[whichstorms==i],trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth)*rainprop.timeres/60./mnorm
     
@@ -1245,13 +1247,13 @@ maxind=np.nanargmax(whichrain,axis=0)
 maxx=np.empty((maxind.shape),dtype="int32")
 maxy=np.empty((maxind.shape),dtype="int32")
 maxstorm=np.empty((maxind.shape),dtype="int32")
-if rotation==True:
+if rotation:
     maxangles=np.empty((maxind.shape),dtype="float32")
 for i in range(0,np.max(ncounts)):
     maxx[maxind==i]=whichx[i,maxind==i]
     maxy[maxind==i]=whichy[i,maxind==i]
     maxstorm[maxind==i]=whichstorms[i,maxind==i]
-    if rotation==True:
+    if rotation:
         maxangles[maxind==i]=randangle[i,maxind==i]
 
 # RANK THE STORMS BY INTENSITY AND ASSIGN RETURN PERIODS
@@ -1268,7 +1270,7 @@ for i in range(0,nrealizations):
     sortx[:,i]=maxx[sortind[:,i],i]
     sorty[:,i]=maxy[sortind[:,i],i]
     sortstorms[:,i]=maxstorm[sortind[:,i],i]
-    if rotation==True:
+    if rotation:
         sortangle[:,i]=maxangles[sortind[:,i],i]
         
     
@@ -1297,12 +1299,66 @@ if alllevels==False:
     sortx=sortx[reducedlevind,:]
     sorty=sorty[reducedlevind,:]
     whichorigstorm=whichorigstorm[reducedlevind,:]
+    
+    
+#################################################################################
+# STEP 2a (OPTIONAL): Find the single storm maximized storm rainfall-added DBW 7/19/2017
+#################################################################################    
+
+if deterministic:
+    print "finding maximizing rainfall..."
+    
+    nanmask=deepcopy(trimmask)
+    nanmask[np.isclose(nanmask,0.)]=np.nan
+    nanmask[np.isclose(nanmask,0.)==False]=1.0
+    max_trnsx=catx[-1]
+    max_trnsy=caty[-1]
+    if rotation==False:
+        # there is some small bug that I don't understand either here or in the storm catalog creation, in which maxstm_avgrain will not exactly match catmax[-1] unless areatype is a point
+        maxstm_rain=np.multiply(catrain[-1,:,max_trnsy:(max_trnsy+maskheight),max_trnsx:(max_trnsx+maskwidth)],nanmask)
+        maxstm_avgrain=np.nansum(np.multiply(catrain[-1,:,max_trnsy:(max_trnsy+maskheight),max_trnsx:(max_trnsx+maskwidth)],trimmask))/mnorm
+        maxstm_ts=np.nansum(np.multiply(maxstm_rain,trimmask)/mnorm,axis=(1,2))
+        maxstm_time=cattime[-1,:]
+    else:  
+        prevmxstm=0.
+        maxstm_rain=np.empty((catrain.shape[1],nanmask.shape[0],nanmask.shape[1]),dtype='float32')
+        for i in range(0,nstorms):
+            passrain=np.nansum(catrain[i,:],axis=0)
+            xctr=catx[i]+maskwidth/2.
+            yctr=caty[i]+maskheight/2.
+            xlinsp=np.linspace(-xctr,rainprop.subdimensions[1]-xctr,rainprop.subdimensions[1])
+            ylinsp=np.linspace(-yctr,rainprop.subdimensions[0]-yctr,rainprop.subdimensions[0])
+            ingridx,ingridy=np.meshgrid(xlinsp,ylinsp)
+            ingridx=ingridx.flatten()
+            ingridy=ingridy.flatten()
+            outgrid=np.column_stack((ingridx,ingridy))       
+        
+            for tempang in angbins:
+                #print "really should fix the center of rotation! to be the storm center"
+                rotx=ingridx*np.cos(tempang)+ingridy*np.sin(tempang)
+                roty=-ingridx*np.sin(tempang)+ingridy*np.cos(tempang)
+                rotgrid=np.column_stack((rotx,roty))
+                delaunay=sp.spatial.qhull.Delaunay(rotgrid)
+                interp=sp.interpolate.LinearNDInterpolator(delaunay,passrain.flatten(),fill_value=0.)
+                train=np.reshape(interp(outgrid),rainprop.subdimensions)
+                temp_maxstm_avgrain=np.nansum(np.multiply(train[max_trnsy:(max_trnsy+maskheight),max_trnsx:(max_trnsx+maskwidth)],trimmask))/mnorm
+                if temp_maxstm_avgrain>prevmxstm:
+                    maxstm_avgrain=temp_maxstm_avgrain
+                    prevmxstm=maxstm_avgrain
+                    maxstm_time=cattime[-i,:]
+                    
+                    for k in range(0,len(maxstm_time)):
+                        interp=sp.interpolate.LinearNDInterpolator(delaunay,catrain[i,k,:].flatten(),fill_value=0.)
+                        maxstm_rain[k,:]=np.reshape(interp(outgrid),rainprop.subdimensions)[max_trnsy:(max_trnsy+maskheight),max_trnsx:(max_trnsx+maskwidth)]
+                    maxstm_rain=np.multiply(maxstm_rain,nanmask)
+                    maxstm_ts=np.nansum(np.multiply(maxstm_rain,trimmask)/mnorm,axis=(1,2))
+
 
 #################################################################################
 # STEP 3 (OPTIONAL): RAINFALL FREQUENCY ANALYSIS
 #################################################################################
 
-if FreqAnalysis==True:
+if FreqAnalysis:
     print "preparing frequency analysis..."
     
     if spreadtype=='ensemble':
@@ -1348,7 +1404,7 @@ if FreqAnalysis==True:
 
 
 
-if Scenarios==True:
+if Scenarios:
     
     print "writing spacetime rainfall scenarios..."
     
@@ -1395,7 +1451,7 @@ if Scenarios==True:
 
             for j in range(0,len(tlist)):
                 print 'Pre-pending rainfall with file '+tlist[j]
-                inrain,intime,_,_=RainyDay.readnetcdf(tlist[j],rainprop.subind)
+                inrain,intime,_,_=RainyDay.readnetcdf(tlist[j],inbounds=rainprop.subind)
                 inrain[inrain<0.]=np.nan
                 
                 for k in range(0,24*60/rainprop.timeres):
@@ -1405,7 +1461,7 @@ if Scenarios==True:
     else:
         precat=np.zeros((catrain.shape[0],0,catrain.shape[2],catrain.shape[3]),dtype='float32')
 
-    if alllevels==True:
+    if alllevels:
         def find_nearest(array,value):
             idx = (np.abs(array-value)).argmin()
             return idx
@@ -1419,7 +1475,7 @@ if Scenarios==True:
         writeexceed=exceedp[minind:]
         writetimes=sorttimes[minind:,:]
         whichorigstorm=whichorigstorm[minind:,:]
-        if rotation==True:
+        if rotation:
             writeangle=sortangle[minind:,:]
             binwriteang=np.digitize(writeangle.ravel(),angbins).reshape(writeangle.shape)
     else:
@@ -1430,13 +1486,10 @@ if Scenarios==True:
         writeperiod=returnperiod
         writeexceed=exceedp
         writetimes=sorttimes
-        if rotation==True:
+        if rotation:
             writeangle=sortangle
             binwriteang=np.digitize(writeangle.ravel(),angbins).reshape(writeangle.shape)
 
-
-    #trimmask[:]=1.0  
-    trimmask[trimmask>0.0]=1.0
     for rlz in range(0,nrealizations):
         print "writing spacetime rainfall scenarios for realization "+str(rlz+1)+"/"+str(nrealizations)
         
@@ -1446,10 +1499,10 @@ if Scenarios==True:
         for i in range(0,len(unqstm)):
             outtime[writestorm[:,rlz]==unqstm[i],:]=cattime[unqstm[i],:] 
         
-        if rotation==True:
-            outrain=RainyDay.SSTspin_write_v2(catrain,writex[:,rlz],writey[:,rlz],writestorm[:,rlz],trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,cattime[:,-1],rainprop,rlzanglebin=binwriteang[:,rlz],delarray=delarray,spin=prependrain,flexspin=False,samptype=resampletype,cumkernel=cumkernel,rotation=rotation)
+        if rotation:
+            outrain=RainyDay.SSTspin_write_v2(catrain,writex[:,rlz],writey[:,rlz],writestorm[:,rlz],nanmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,cattime[:,-1],rainprop,rlzanglebin=binwriteang[:,rlz],delarray=delarray,spin=prependrain,flexspin=False,samptype=resampletype,cumkernel=cumkernel,rotation=rotation)
         else:
-            outrain=RainyDay.SSTspin_write_v2(catrain,writex[:,rlz],writey[:,rlz],writestorm[:,rlz],trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,cattime[:,-1],rainprop,spin=prependrain,flexspin=False,samptype=resampletype,cumkernel=cumkernel,rotation=rotation)
+            outrain=RainyDay.SSTspin_write_v2(catrain,writex[:,rlz],writey[:,rlz],writestorm[:,rlz],nanmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,cattime[:,-1],rainprop,spin=prependrain,flexspin=False,samptype=resampletype,cumkernel=cumkernel,rotation=rotation)
 
         #outrain[:,:,trimmask==0]=-9999.               # this line produced problems in CUENCAS CONVERSIONS :(
         writename=WriteName+'_SSTrlz'+str(rlz+1)+'.nc'
@@ -1457,7 +1510,10 @@ if Scenarios==True:
         subrangelon=lonrange[xmin:xmax+1]
         print "need to write angles to the realization files"
         RainyDay.writerealization(rlz,nrealizations,writename,outrain,writemax[:,rlz],writestorm[:,rlz],writeperiod,writex[:,rlz],writey[:,rlz],outtime,subrangelat,subrangelon,whichorigstorm[:,rlz])
-          
+    
+    if deterministic:
+        RainyDay.writemaximized(wd+'/'+scenarioname+'/'+scenarioname+'_maximizedstorm.nc',maxstm_rain,maxstm_avgrain,maxstm_ts,max_trnsx,max_trnsy,maxstm_time,subrangelat,subrangelon)
+             
 end = time.time()   
 print "RainyDay has successfully finished!\n"
 print "Elapsed time: "+str((end - start)/60.)+" minutes"

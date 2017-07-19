@@ -81,27 +81,27 @@ def find_nearest(array,value):
 # THIS IS THE CORE OF THE STORM CATALOG CREATION TECHNIQUE
 #==============================================================================
     
-def catalogweave(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum):
-    rainsum[:]=0.
-    code= """
-        #include <stdio.h>
-        int i,j,x,y;
-        for (x=0;x<xlen;x++) {
-            for (y=0;y<ylen;y++) {
-                for (j=0;j<maskheight;j++) {
-                    for (i=0;i<maskwidth;i++) {
-                        rainsum(y,x)=rainsum(y,x)+temparray(y+j,x+i)*trimmask(j,i);                     
-                    }                               
-                }
-            }                      
-        }
-    """
-    vars=['temparray','trimmask','xlen','ylen','maskheight','maskwidth','rainsum']
-    sp.weave.inline(code,vars,type_converters=converters.blitz,compiler='gcc')
-    rmax=np.nanmax(rainsum)
-    wheremax=np.where(rainsum==rmax)
-    return rmax, wheremax[0][0], wheremax[1][0]
-    
+#def catalogweave(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum):
+#    rainsum[:]=0.
+#    code= """
+#        #include <stdio.h>
+#        int i,j,x,y;
+#        for (x=0;x<xlen;x++) {
+#            for (y=0;y<ylen;y++) {
+#                for (j=0;j<maskheight;j++) {
+#                    for (i=0;i<maskwidth;i++) {
+#                        rainsum(y,x)=rainsum(y,x)+temparray(y+j,x+i)*trimmask(j,i);                     
+#                    }                               
+#                }
+#            }                      
+#        }
+#    """
+#    vars=['temparray','trimmask','xlen','ylen','maskheight','maskwidth','rainsum']
+#    sp.weave.inline(code,vars,type_converters=converters.blitz,compiler='gcc')
+#    rmax=np.nanmax(rainsum)
+#    wheremax=np.where(rainsum==rmax)
+#    return rmax, wheremax[0][0], wheremax[1][0]
+#    
 
 
 def catalogAlt(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum):
@@ -117,7 +117,7 @@ def catalogAlt(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum):
     
     return rmax, wheremax[0][0], wheremax[1][0]
 
-@jit
+@jit(nopython=True)
 def catalogNumba(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum):
     rainsum[:]=0.
     for i in range(0,(ylen)*(xlen)):
@@ -142,82 +142,82 @@ def SSTalt(passrain,whichx,whichy,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwi
 #==============================================================================
 # THIS VARIANT IS SIMPLER AND UNLIKE SSTWRITE, IT ACTUALLY WORKS RELIABLY!
 #==============================================================================
-def SSTwriteAlt(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth):
-    nyrs=np.int(rlzx.shape[0])
-    raindur=np.int(catrain.shape[1])
-    outrain=np.zeros((nyrs,raindur,maskheight,maskwidth),dtype='float32')
-    unqstm,unqind,unqcnts=np.unique(rlzstm,return_inverse=True,return_counts=True)
-    #ctr=0
-    for i in range(0,len(unqstm)):
-        unqwhere=np.where(unqstm[i]==rlzstm)[0]
-        for j in unqwhere:
-            #ctr=ctr+1
-            #print ctr
-            outrain[j,:]=np.multiply(catrain[unqstm[i],:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)],trimmask)
-    return outrain
+#def SSTwriteAlt(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth):
+#    nyrs=np.int(rlzx.shape[0])
+#    raindur=np.int(catrain.shape[1])
+#    outrain=np.zeros((nyrs,raindur,maskheight,maskwidth),dtype='float32')
+#    unqstm,unqind,unqcnts=np.unique(rlzstm,return_inverse=True,return_counts=True)
+#    #ctr=0
+#    for i in range(0,len(unqstm)):
+#        unqwhere=np.where(unqstm[i]==rlzstm)[0]
+#        for j in unqwhere:
+#            #ctr=ctr+1
+#            #print ctr
+#            outrain[j,:]=np.multiply(catrain[unqstm[i],:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)],trimmask)
+#    return outrain
        
 
 #==============================================================================
 # THIS VARIANT IS SAME AS ABOVE, BUT HAS A MORE INTERESTING RAINFALL PREPENDING PROCEDURE
 #==============================================================================
 
-def SSTwriteAltPreCat(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,ptime):    
-    catyears=ptime.astype('datetime64[Y]').astype(int)+1970
-    ptime=ptime.astype('datetime64[M]').astype(int)-(catyears-1970)*12+1
-    nyrs=np.int(rlzx.shape[0])
-    raindur=np.int(catrain.shape[1]+precat.shape[1])
-    outrain=np.zeros((nyrs,raindur,maskheight,maskwidth),dtype='float32')
-    unqstm,unqind,unqcnts=np.unique(rlzstm,return_inverse=True,return_counts=True)
-
-    for i in range(0,len(unqstm)):
-        unqwhere=np.where(unqstm[i]==rlzstm)[0]
-        unqmonth=ptime[unqstm[i]]
-        pretimeind=np.where(np.logical_and(ptime>unqmonth-2,ptime<unqmonth+2))[0]
-        for j in unqwhere:
-            temprain=np.concatenate((np.squeeze(precat[np.random.choice(pretimeind, 1),:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)],axis=0),catrain[unqstm[i],:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)]),axis=0)
-            outrain[j,:]=np.multiply(temprain,trimmask)
-    return outrain
-    
+#def SSTwriteAltPreCat(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,ptime):    
+#    catyears=ptime.astype('datetime64[Y]').astype(int)+1970
+#    ptime=ptime.astype('datetime64[M]').astype(int)-(catyears-1970)*12+1
+#    nyrs=np.int(rlzx.shape[0])
+#    raindur=np.int(catrain.shape[1]+precat.shape[1])
+#    outrain=np.zeros((nyrs,raindur,maskheight,maskwidth),dtype='float32')
+#    unqstm,unqind,unqcnts=np.unique(rlzstm,return_inverse=True,return_counts=True)
+#
+#    for i in range(0,len(unqstm)):
+#        unqwhere=np.where(unqstm[i]==rlzstm)[0]
+#        unqmonth=ptime[unqstm[i]]
+#        pretimeind=np.where(np.logical_and(ptime>unqmonth-2,ptime<unqmonth+2))[0]
+#        for j in unqwhere:
+#            temprain=np.concatenate((np.squeeze(precat[np.random.choice(pretimeind, 1),:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)],axis=0),catrain[unqstm[i],:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)]),axis=0)
+#            outrain[j,:]=np.multiply(temprain,trimmask)
+#    return outrain
+#    
 
 #==============================================================================
 # SAME AS ABOVE, BUT HANDLES STORM ROTATION
 #==============================================================================    
     
-def SSTwriteAltPreCatRotation(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,ptime,delarray,rlzanglebin,rainprop):
-#def SSTwriteAltPreCatRotation(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,ptime,delarray,rlzanglebin):
-    catyears=ptime.astype('datetime64[Y]').astype(int)+1970
-    ptime=ptime.astype('datetime64[M]').astype(int)-(catyears-1970)*12+1
-    nyrs=np.int(rlzx.shape[0])
-    raindur=np.int(catrain.shape[1]+precat.shape[1])
-    outrain=np.zeros((nyrs,raindur,maskheight,maskwidth),dtype='float32')
-    unqstm,unqind,unqcnts=np.unique(rlzstm,return_inverse=True,return_counts=True)      # unqstm is the storm number
-
-    for i in range(0,len(unqstm)):
-        unqwhere=np.where(unqstm[i]==rlzstm)[0]
-        unqmonth=ptime[unqstm[i]]
-        pretimeind=np.where(np.logical_and(ptime>unqmonth-2,ptime<unqmonth+2))[0]
-        for j in unqwhere:
-            inrain=catrain[unqstm[i],:].copy()
-            
-            xctr=rlzx[j]+maskwidth/2.
-            yctr=rlzy[j]+maskheight/2.
-            xlinsp=np.linspace(-xctr,rainprop.subdimensions[1]-xctr,rainprop.subdimensions[1])
-            ylinsp=np.linspace(-yctr,rainprop.subdimensions[0]-yctr,rainprop.subdimensions[0])
-    
-            ingridx,ingridy=np.meshgrid(xlinsp,ylinsp)
-            ingridx=ingridx.flatten()
-            ingridy=ingridy.flatten()
-            outgrid=np.column_stack((ingridx,ingridy))  
-            
-            for k in range(0,inrain.shape[0]):
-                interp=sp.interpolate.LinearNDInterpolator(delarray[unqstm[i]][rlzanglebin[j]-1],inrain[k,:].flatten(),fill_value=0.)
-                inrain[k,:]=np.reshape(interp(outgrid),rainprop.subdimensions)
-                #inrain[k,:]=temprain
-            
-            temprain=np.concatenate((np.squeeze(precat[np.random.choice(pretimeind, 1),:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)],axis=0),inrain[:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)]),axis=0)
-
-            outrain[j,:]=np.multiply(temprain,trimmask)
-    return outrain
+#def SSTwriteAltPreCatRotation(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,ptime,delarray,rlzanglebin,rainprop):
+##def SSTwriteAltPreCatRotation(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,ptime,delarray,rlzanglebin):
+#    catyears=ptime.astype('datetime64[Y]').astype(int)+1970
+#    ptime=ptime.astype('datetime64[M]').astype(int)-(catyears-1970)*12+1
+#    nyrs=np.int(rlzx.shape[0])
+#    raindur=np.int(catrain.shape[1]+precat.shape[1])
+#    outrain=np.zeros((nyrs,raindur,maskheight,maskwidth),dtype='float32')
+#    unqstm,unqind,unqcnts=np.unique(rlzstm,return_inverse=True,return_counts=True)      # unqstm is the storm number
+#
+#    for i in range(0,len(unqstm)):
+#        unqwhere=np.where(unqstm[i]==rlzstm)[0]
+#        unqmonth=ptime[unqstm[i]]
+#        pretimeind=np.where(np.logical_and(ptime>unqmonth-2,ptime<unqmonth+2))[0]
+#        for j in unqwhere:
+#            inrain=catrain[unqstm[i],:].copy()
+#            
+#            xctr=rlzx[j]+maskwidth/2.
+#            yctr=rlzy[j]+maskheight/2.
+#            xlinsp=np.linspace(-xctr,rainprop.subdimensions[1]-xctr,rainprop.subdimensions[1])
+#            ylinsp=np.linspace(-yctr,rainprop.subdimensions[0]-yctr,rainprop.subdimensions[0])
+#    
+#            ingridx,ingridy=np.meshgrid(xlinsp,ylinsp)
+#            ingridx=ingridx.flatten()
+#            ingridy=ingridy.flatten()
+#            outgrid=np.column_stack((ingridx,ingridy))  
+#            
+#            for k in range(0,inrain.shape[0]):
+#                interp=sp.interpolate.LinearNDInterpolator(delarray[unqstm[i]][rlzanglebin[j]-1],inrain[k,:].flatten(),fill_value=0.)
+#                inrain[k,:]=np.reshape(interp(outgrid),rainprop.subdimensions)
+#                #inrain[k,:]=temprain
+#            
+#            temprain=np.concatenate((np.squeeze(precat[np.random.choice(pretimeind, 1),:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)],axis=0),inrain[:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)]),axis=0)
+#
+#            outrain[j,:]=np.multiply(temprain,trimmask)
+#    return outrain
        
 
 #==============================================================================
@@ -284,38 +284,38 @@ def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskh
 # THIS FINDS THE TRANSPOSITION LOCATION FOR EACH REALIZATION IF YOU ARE USING THE KERNEL-BASED RESAMPLER
 # IF I CONFIGURE THE SCRIPT SO THE USER CAN PROVIDE A CUSTOM RESAMPLING SCHEME, THIS WOULD PROBABLY WORK FOR THAT AS WELL
 #==============================================================================    
-def weavekernel(rndloc,cumkernel):
-    nlocs=len(rndloc)
-    nrows=cumkernel.shape[0]
-    ncols=cumkernel.shape[1]
-    tempx=np.empty((len(rndloc)),dtype="int32")
-    tempy=np.empty((len(rndloc)),dtype="int32")
-    code= """
-        #include <stdio.h>
-        int i,x,y,brklp;
-        double prevprob;
-        for (i=0;i<nlocs;i++) {
-            prevprob=0.0;
-            brklp=0;
-            for (y=0; y<nrows; y++) {
-                for (x=0; x<ncols; x++) {
-                    if ( (rndloc(i)<=cumkernel(y,x)) && (rndloc(i)>prevprob) ) {
-                        tempx(i)=x;
-                        tempy(i)=y;
-                        prevprob=cumkernel(y,x);
-                        brklp=1;
-                        break;
-                    }                     
-                }
-                if (brklp==1) {
-                    break;                    
-                }                         
-            }   
-        }
-    """
-    vars=['rndloc','cumkernel','nlocs','nrows','ncols','tempx','tempy']
-    sp.weave.inline(code,vars,type_converters=converters.blitz,compiler='gcc')
-    return tempx,tempy
+#def weavekernel(rndloc,cumkernel):
+#    nlocs=len(rndloc)
+#    nrows=cumkernel.shape[0]
+#    ncols=cumkernel.shape[1]
+#    tempx=np.empty((len(rndloc)),dtype="int32")
+#    tempy=np.empty((len(rndloc)),dtype="int32")
+#    code= """
+#        #include <stdio.h>
+#        int i,x,y,brklp;
+#        double prevprob;
+#        for (i=0;i<nlocs;i++) {
+#            prevprob=0.0;
+#            brklp=0;
+#            for (y=0; y<nrows; y++) {
+#                for (x=0; x<ncols; x++) {
+#                    if ( (rndloc(i)<=cumkernel(y,x)) && (rndloc(i)>prevprob) ) {
+#                        tempx(i)=x;
+#                        tempy(i)=y;
+#                        prevprob=cumkernel(y,x);
+#                        brklp=1;
+#                        break;
+#                    }                     
+#                }
+#                if (brklp==1) {
+#                    break;                    
+#                }                         
+#            }   
+#        }
+#    """
+#    vars=['rndloc','cumkernel','nlocs','nrows','ncols','tempx','tempy']
+#    sp.weave.inline(code,vars,type_converters=converters.blitz,compiler='gcc')
+#    return tempx,tempy
     
     
 def pykernel(rndloc,cumkernel):
@@ -335,7 +335,7 @@ def pykernel(rndloc,cumkernel):
         tempy[i]=y
     return tempx,tempy
 
-@jit
+@jit(nopython=True)
 def numbakernel(rndloc,cumkernel):
     nlocs=len(rndloc)
     nrows=cumkernel.shape[0]
@@ -515,6 +515,57 @@ def writerealization(rlz,nrealizations,writename,outrain,writemax,writestorm,wri
     #stormtimes[:]=writetimes
     
     dataset.close()
+    
+    
+#==============================================================================
+# WRITE The maximized storm
+#==============================================================================
+def writemaximized(writename,outrain,writemax,write_ts,writex,writey,writetimes,latrange,lonrange):
+    # SAVE outrain AS NETCDF FILE
+    dataset=Dataset(writename, 'w', format='NETCDF4')
+
+    # create dimensions
+    outlats=dataset.createDimension('outlat',len(latrange))
+    outlons=dataset.createDimension('outlon',len(lonrange))
+    time=dataset.createDimension('time',len(writetimes))
+
+    # create variables
+    times=dataset.createVariable('time',np.float64, ('time'))
+    latitudes=dataset.createVariable('latitude',np.float32, ('outlat'))
+    longitudes=dataset.createVariable('longitude',np.float32, ('outlon'))
+    rainrate=dataset.createVariable('rainrate',np.float32,('time','outlat','outlon'),zlib=True,complevel=4) 
+    basinrainfall=dataset.createVariable('basinrainfall',np.float32) 
+    xlocation=dataset.createVariable('xlocation',np.int32) 
+    ylocation=dataset.createVariable('ylocation',np.int32) 
+    #stormtimes=dataset.createVariable('stormtimes',np.float64,('nyears'))          
+    
+    # Global Attributes
+    dataset.description = 'SST Rainfall Maximum Storm'
+
+    dataset.history = 'Created ' + str(datetime.now())
+    dataset.source = 'Storm Catalog for (FILL IN THE BLANK)'
+    
+    # Variable Attributes (time since 1970-01-01 00:00:00.0 in numpys)
+    latitudes.units = 'degrees north'
+    longitudes.units = 'degrees east'
+    rainrate.units = 'mm/h'
+    times.units = 'minutes since 1970-01-01 00:00.0'
+    times.calendar = 'gregorian'
+    
+    #print dataset.description
+    #print dataset.history
+    
+    # fill the netcdf file
+    latitudes[:]=latrange
+    longitudes[:]=lonrange
+    rainrate[:]=outrain 
+    basinrainfall[:]=writemax
+    times[:]=writetimes
+    xlocation[:]=writex
+    ylocation[:]=writey
+    
+    dataset.close()
+        
         
 
 #==============================================================================

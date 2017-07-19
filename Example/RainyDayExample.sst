@@ -4,7 +4,7 @@
 #==============================================================================
 
 # BASIC INFO ON THE SCENARIO
-MAINPATH	/Users/daniel/Google_Drive/RainyDay2/NewExample									# THE MAGIC WILL HAPPEN HERE, IF NOT OTHERWISE DEFINED
+MAINPATH	/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example									# THE MAGIC WILL HAPPEN HERE, IF NOT OTHERWISE DEFINED
 SCENARIO	RainyDay_example									# THE DIRECTORY NAME IN MAINPATH WHERE THINGS WILL BE WRITTEN, ALSO PREFIX FOR FILES
 
 
@@ -27,6 +27,7 @@ LONGITUDE_MIN	-96
 LONGITUDE_MAX	-90
 DIAGNOSTICPLOTS		False													# TO CREATE INFORMATIVE DIAGNOSTIC RAINFALL MAPS, WILL WRITE TO MAINPATH
 DIAGNOSTICMOVIES	False												# CREATE SHORT MOVIES FOR EACH STORM?  THIS OPTION MAY NOT WORK ON ALL PLATFORMS
+DETERMINISTIC	true
 FREQANALYSIS	true													# TO DO RAINFALL FREQUENCY ANALYSIS
 SCENARIOS		true													# SHOULD RAINFALL SCENARIO NETCDF FILES BE WRITTEN?
 SPINPERIOD		3													# PRE-STORM "SPIN-UP RAINFALL," ONLY NEEDED IF YOU ARE WRITING SCENARIOS.  OPTIONS ARE "none" OR A NUMBER IN DAYS
@@ -37,16 +38,17 @@ INCLUDEYEARS 	2002-2003										# 'all' OR COMMA SEPARATED 4-DIGIT NUMERIC (e.g
 RESAMPLER		uniform													# OPTIONS: "uniform", "kernel", "user"
 COUNTSAMPLE		poisson													# HOW WILL THE STORM COUNTS BE SYNTHESIZED FOR EACH YEAR? OPTIONS: "poisson" or "empirical"
 SPREADTYPE		ensemble
-ROTATIONANGLE	-10,10,10
+#ROTATIONANGLE	-10,10,10
+ROTATIONANGLE	none
 RETURNLEVELS	10,100,1000
-ACCELERATOR		numba									# OPTIONS: "none", "numba", or "weave" ("numba" is recommended)
+ACCELERATOR		numba									# OPTIONS: "none" or "numba" ("numba" is recommended)
 
 # WHAT KIND OF SHAPE ARE WE SAMPLING FOR? OPTIONS ARE:
 # 		POINT (NOT RECOMMENDED FOR CONSTRUCTING STORM CATALOGS, BUT OK FOR SUBSEQUENT WORK), BOX, OR WATERSHED
-POINTAREA	point																			# OPTIONS: “point”,“basin”,”box”
-WATERSHEDSHP	/Users/daniel/Google_Drive/RainyDay2/NewExample/GISdata/05412500_TurkeyRiver_GEOG.shp
+POINTAREA	basin																			# OPTIONS: “point”,“basin”,”box”
+WATERSHEDSHP	/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/GISdata/05412500_TurkeyRiver_GEOG.shp
 SHAPEPROJECTION		geographic
-BASEMAP		/Users/daniel/Google_Drive/RainyDay2/NewExample/GISdata/IowaBasemap.shp				# PUT "none" to omit
+BASEMAP		/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/GISdata/IowaBasemap.shp				# PUT "none" to omit
 BASEFIELD	IowaBaseMap
 POINTLAT	41.666667 
 POINTLON	-91.533333
