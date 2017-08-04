@@ -574,7 +574,6 @@ def writemaximized(writename,outrain,writemax,write_ts,writex,writey,writetimes,
 def readnetcdf(rfile,inbounds=False):
     infile=Dataset(rfile,'r')
     if np.any(inbounds!=False):
-
         outrain=np.array(infile.variables['rainrate'][:,inbounds[3]:inbounds[2]+1,inbounds[0]:inbounds[1]+1])
         outlatitude=np.array(infile.variables['latitude'][inbounds[3]:inbounds[2]+1])
         outlongitude=np.array(infile.variables['longitude'][inbounds[0]:inbounds[1]+1])         
