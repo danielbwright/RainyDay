@@ -142,8 +142,8 @@ fields with Stochastic Storm Transposition for assessment of rainfall-driven haz
 start = time.time()
 parameterfile='ttt'
 
-parameterfile=np.str(sys.argv[1])
-#parameterfile='/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDayExample.sst'
+#parameterfile=np.str(sys.argv[1])
+parameterfile='/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDayExample.sst'
 
 if os.path.isfile(parameterfile)==False:
     sys.exit("You either didn't specify a parameter file, or it doesn't exist.")
@@ -946,8 +946,8 @@ if DoDiagnostics:
     else:
         figsizey=5   
         figsizex=5
-        
-        
+       
+    bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')    
     outerextent=np.array(rainprop.subextent,dtype='float32')   
     for i in range(0,nstorms):    
         temprain=np.nansum(catrain[i,:],axis=0)*rainprop.timeres/60.
@@ -956,8 +956,8 @@ if DoDiagnostics:
         fig = plt.figure()
         fig.set_size_inches(figsizex,figsizey)
         f1=plt.imshow(temprain, interpolation='none',extent=outerextent,cmap='Blues')
-        plt.title('Storm '+str(i+1)+': '+str(cattime[i,-1])+'\nMax Rainfall:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]+(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}')
-        bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')
+        plt.title('Storm '+str(i+1)+': '+str(cattime[i,-1])+'\nMax Rainfall:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}')
+        #bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')
         bmap.drawcoastlines(linewidth=1.25)
         bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
         bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
@@ -981,15 +981,15 @@ if DoDiagnostics:
         cb.set_label('Total Rainfall [mm]')
         plt.scatter(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=10,facecolors='none',edgecolors='r',alpha=0.5)
         plt.savefig(diagpath+'Storm'+str(i+1)+'_'+str(cattime[i,-1]).split('T')[0]+'.png',dpi=250)
-        plt.close('all')       
-         
+        plt.close()       
+ 
          
     # PLOT STORM OCCURRENCE PROBABILITIES
     fig = plt.figure()
     fig.set_size_inches(figsizex,figsizey)
     f1=plt.imshow(pltkernel,interpolation="none",extent=rainprop.subextent,cmap='Reds')
     plt.title("Probability of storm occurrence")
-    bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')
+    #bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')
     bmap.drawcoastlines(linewidth=1.25)
     bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
     bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
@@ -1026,7 +1026,7 @@ if DoDiagnostics:
     fig.set_size_inches(figsizex,figsizey)
     f1=plt.imshow(avgrain,interpolation="none",extent=rainprop.subextent,cmap="Blues")
     plt.title("Average storm rainfall")
-    bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')
+    #bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')
     bmap.drawcoastlines(linewidth=1.25)
     bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
     bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
@@ -1050,7 +1050,7 @@ if DoDiagnostics:
     plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
     plt.savefig(diagpath+'AvgStormRain.png',dpi=250)
     #plt.savefig(diagpath+'AvgStormRain.pdf')
-    plt.close('all')
+    plt.close()
         
          
 if DoDiagMovies:
@@ -1088,7 +1088,7 @@ if DoDiagMovies:
         titl=plt.title(tstr+'\n'+str(temptime[0,]))
         #pylab.hold(True)
         f1=plt.imshow(temprain[0,:],extent=rainprop.subextent,interpolation="none",cmap='Blues',norm=LogNorm(vmin=0.1, vmax=np.nanmax(temprain)))
-        bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')
+        #bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')
         bmap.drawcoastlines(linewidth=1.25)
         bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
         bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
@@ -1113,7 +1113,7 @@ if DoDiagMovies:
         cb.set_label('Rain Rate (mm/hr)')
         anim=manimation.FuncAnimation(fig,animate,init_func=init,frames=temprain.shape[0],interval=25,blit=True)
         anim.save(diagpath+'StormMovie_'+str(i+1)+'_'+str(cattime[i,-1]).split('T')[0]+'.mp4',fps=3,dpi=250)   # animation seems buggy, I can only create movies for odd frames-per-second rates       
-        plt.close('all')  
+        plt.close()  
 
 
      # this is for a very specific situation....
