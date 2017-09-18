@@ -142,8 +142,8 @@ fields with Stochastic Storm Transposition for assessment of rainfall-driven haz
 start = time.time()
 parameterfile='ttt'
 
-parameterfile=np.str(sys.argv[1])
-#parameterfile='/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDayExample.sst'
+#parameterfile=np.str(sys.argv[1])
+parameterfile='/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDayExample.sst'
 
 if os.path.isfile(parameterfile)==False:
     sys.exit("You either didn't specify a parameter file, or it doesn't exist.")
@@ -207,8 +207,8 @@ duration=np.int(cardinfo[cardinfo[:,0]=="DURATION",1][0])
 if isinstance(duration,(int,long))==False or duration<0:
     sys.exit("Specified duration is not a positive integer value!")
     
-if timeseparation<duration:
-    timeseparation=duration
+if timeseparation<0:
+    timeseparation=0
     
 samplingtype=cardinfo[cardinfo[:,0]=="COUNTSAMPLE",1][0]
 if samplingtype.lower()!='poisson' and samplingtype.lower()!='empirical':
@@ -1504,11 +1504,12 @@ if Scenarios:
         else:
             outrain=RainyDay.SSTspin_write_v2(catrain,writex[:,rlz],writey[:,rlz],writestorm[:,rlz],nanmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,cattime[:,-1],rainprop,spin=prependrain,flexspin=False,samptype=resampletype,cumkernel=cumkernel,rotation=rotation)
 
-        #outrain[:,:,trimmask==0]=-9999.               # this line produced problems in CUENCAS CONVERSIONS :(
+        outrain[:,:,np.isclose(trimmask,0.)]=-9999.               # this line produced problems in CUENCAS CONVERSIONS :(
         writename=WriteName+'_SSTrlz'+str(rlz+1)+'.nc'
         subrangelat=latrange[ymin:ymax+1]
         subrangelon=lonrange[xmin:xmax+1]
-        print "need to write angles to the realization files"
+        #print "need to write angles to the realization files"
+        
         RainyDay.writerealization(rlz,nrealizations,writename,outrain,writemax[:,rlz],writestorm[:,rlz],writeperiod,writex[:,rlz],writey[:,rlz],outtime,subrangelat,subrangelon,whichorigstorm[:,rlz])
     
     if deterministic:
