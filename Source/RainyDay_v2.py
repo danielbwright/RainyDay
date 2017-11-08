@@ -142,8 +142,11 @@ fields with Stochastic Storm Transposition for assessment of rainfall-driven haz
 start = time.time()
 parameterfile='ttt'
 
-parameterfile=np.str(sys.argv[1])
+#parameterfile=np.str(sys.argv[1])
 #parameterfile='/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDayExample.sst'
+#parameterfile='/Users/daniel/Google_Drive/RainyDay2/IrregularDomainTesting/FL_testing.sst'
+#   parameterfile='/Users/daniel/Google_Drive/PapersandReports/MyPapers/FloodStructure/Analyses/StageIV_Turkey72hour.sst'
+parameterfile='/Users/daniel/Google_Drive/RainyDay2/IrregularDomainTesting/defaulttesting.txt'
 
 if os.path.isfile(parameterfile)==False:
     sys.exit("You either didn't specify a parameter file, or it doesn't exist.")
@@ -155,332 +158,504 @@ else:
 #==============================================================================
 # USER DEFINED VARIABLES
 #==============================================================================
-wd=str(cardinfo[cardinfo[:,0]=="MAINPATH",1][0])
-scenarioname=str(cardinfo[cardinfo[:,0]=="SCENARIO",1][0])
-fullpath=wd+'/'+scenarioname
-if os.path.isdir(fullpath)==False:
-    os.system('mkdir -p -v %s' %(fullpath))
-os.chdir(wd)
+
+try:
+    wd=str(cardinfo[cardinfo[:,0]=="MAINPATH",1][0])
+    try:
+        scenarioname=str(cardinfo[cardinfo[:,0]=="SCENARIONAME",1][0])
+    except Exception:
+        print "You did't specify SCENARIONAME, defaulting to 'RainyDayAnalysis'!"
+        scenarioname='RainyDayAnalysis'
+    fullpath=wd+'/'+scenarioname
+    if os.path.isdir(fullpath)==False:
+        os.system('mkdir -p -v %s' %(fullpath))
+    os.chdir(wd)
+except IndexError:
+    sys.exit("You did't specify MAINPATH, which is a required field!")
 
 
 # PROPERTIES RELATED TO SST PROCEDURE:
-catalogname=str(cardinfo[cardinfo[:,0]=="CATALOGNAME",1][0])
+try:
+    catalogname=str(cardinfo[cardinfo[:,0]=="CATALOGNAME",1][0])
+except Exception:
+    catalogname='SSTstormcatalog.nc'
 catalogname=wd+'/'+catalogname
 
-CreateCatalog=cardinfo[cardinfo[:,0]=="CREATECATALOG",1][0]
+try:
+    CreateCatalog=cardinfo[cardinfo[:,0]=="CREATECATALOG",1][0]
+except Exception:
+    CreateCatalog='true'
+    
 if CreateCatalog.lower()=='true':
     CreateCatalog=True
 else:
     CreateCatalog=False
     if os.path.isfile(catalogname)==False:
         sys.exit("You need to create a storm catalog first.")
-        
-acceltype=cardinfo[cardinfo[:,0]=="ACCELERATOR",1][0]
-if acceltype.lower()=='weave':
-    print "Weave selected!"
-    sys.exit("weave isn't supported anymore!")
-    weavecheck=True
-    numbacheck=False
-    #from scipy import weave
-    #from scipy.weave import converters 
-elif acceltype.lower()=='numba':
-    print "Numba selected!"
-    numbacheck=True
-    weavecheck=False
-    #import cython
-    #import pyximport; pyximport.install()
-    #pyximport.install(setup_args={'include_dirs':[np.get_include()]})
-    #import CatalogCython
-    #from numba import jit
-
-else:
-    print "No acceleration selected!"
-    weavecheck=False
-    numbacheck=False
-
-
-nstorms=np.int(cardinfo[cardinfo[:,0]=="NSTORMS",1][0])
-nsimulations=np.int(cardinfo[cardinfo[:,0]=="NYEARS",1][0])
-nrealizations=np.int(cardinfo[cardinfo[:,0]=="NREALIZATIONS",1][0])
-timeseparation=np.int(cardinfo[cardinfo[:,0]=="TIMESEPARATION",1][0]) 
-duration=np.int(cardinfo[cardinfo[:,0]=="DURATION",1][0])
-if isinstance(duration,(int,long))==False or duration<0:
-    sys.exit("Specified duration is not a positive integer value!")
+ 
+try:       
+    acceltype=cardinfo[cardinfo[:,0]=="ACCELERATOR",1][0]
+    if acceltype.lower()=='weave':
+        print "Weave selected!"
+        sys.exit("weave isn't supported anymore!")
+        weavecheck=True
+        numbacheck=False
+        #from scipy import weave
+        #from scipy.weave import converters 
+    elif acceltype.lower()=='numba':
+        print "Numba selected!"
+        numbacheck=True
+        weavecheck=False
+        #import cython
+        #import pyximport; pyximport.install()
+        #pyximport.install(setup_args={'include_dirs':[np.get_include()]})
+        #import CatalogCython
+        #from numba import jit
     
+    else:
+        print "No acceleration selected!"
+        weavecheck=False
+        numbacheck=False
+except Exception:
+    print "No acceleration selected! This is not recommended if Numba is available on your Python build"
+    weavecheck=False
+    numbacheck=False
+
+
+try:
+    nstorms=np.int(cardinfo[cardinfo[:,0]=="NSTORMS",1][0])
+    print str(nstorms)+" storms will be identified for storm catalog!"
+except Exception:
+    nstorms=100
+    print "you didn't specify NSTORMS, defaulting to 100!"
+
+try:
+    nsimulations=np.int(cardinfo[cardinfo[:,0]=="NYEARS",1][0])
+    print str(nsimulations)+" years of synthetic storms will be generated, for a max recurrence interval of "+str(nsimulations)+" years!"
+except Exception:
+    nsimulations=100
+    print "you didn't specify NYEARS, defaulting to 100, for a max recurrence interval of 100 years!"    
+
+try:
+    nrealizations=np.int(cardinfo[cardinfo[:,0]=="NREALIZATIONS",1][0])
+    print str(nrealizations)+" realizations will be performed!"
+except Exception:
+    nrealizations=1
+
+try:
+    timeseparation=np.int(cardinfo[cardinfo[:,0]=="TIMESEPARATION",1][0])
+except Exception:
+    timeseparation=np.int(0)
+
+try:
+    duration=np.int(cardinfo[cardinfo[:,0]=="DURATION",1][0])
+    if isinstance(duration,(int,long))==False or duration<0:
+        sys.exit("Specified duration is not a positive integer value!")
+except IndexError:
+    sys.exit("You didn't specify 'DURATION', which is a required field!")
+        
 if timeseparation<0:
     timeseparation=0
-    
-samplingtype=cardinfo[cardinfo[:,0]=="COUNTSAMPLE",1][0]
-if samplingtype.lower()!='poisson' and samplingtype.lower()!='empirical':
-    sys.exit("unrecognized storm count resampling type, options are: 'poisson' or 'empirical'")
 
-areatype=str(cardinfo[cardinfo[:,0]=="POINTAREA",1][0])
-if areatype.lower()=="basin":
-    wsmaskshp=str(cardinfo[cardinfo[:,0]=="WATERSHEDSHP",1][0])
+try:
+    samplingtype=cardinfo[cardinfo[:,0]=="RESAMPLING",1][0]
+    if samplingtype.lower()!='poisson' and samplingtype.lower()!='empirical':
+        sys.exit("unrecognized storm count resampling type, options are: 'poisson' or 'empirical'")
+except Exception:
+    samplingtype='poisson'
 
-    shpproj=cardinfo[cardinfo[:,0]=="SHAPEPROJECTION",1][0]
-    if shpproj=='geographic':
-        shpproj=GEOG
+if samplingtype=='poisson':
+    print "Poisson-based temporal resampling scheme will be used!"
+elif samplingtype=='empirical':
+    print "Empirically-based temporal resampling scheme will be used!"    
+
+try:
+    areatype=str(cardinfo[cardinfo[:,0]=="POINTAREA",1][0])
+    if areatype.lower()=="basin":
+        try:
+            wsmaskshp=str(cardinfo[cardinfo[:,0]=="WATERSHEDSHP",1][0])
+            print "You selected 'basin' for 'POINTAREA', please note that if the watershed is not in a regular lat/lon projection such as EPSG4326/WGS 84, the results will likely be incorrect!"
+        except IndexError:
+            sys.exit("You specified 'basin' for 'POINTAREA' but didn't specify 'WATERSHEDSHP'")            
+    elif areatype.lower()=="point":
+        try:
+            ptlat=np.float32(cardinfo[cardinfo[:,0]=="POINTLAT",1][0]) 
+            ptlon=np.float32(cardinfo[cardinfo[:,0]=="POINTLON",1][0]) 
+        except IndexError:
+            sys.exit("You specified 'point' for 'POINTAREA' but didn't properly specify 'POINTLAT' and 'POINTLON'")
+    elif areatype.lower()=="box":
+        try:
+            box1=np.float32(cardinfo[cardinfo[:,0]=="BOX_YMIN",1][0])
+            box2=np.float32(cardinfo[cardinfo[:,0]=="BOX_YMAX",1][0])
+            box3=np.float32(cardinfo[cardinfo[:,0]=="BOX_XMIN",1][0])
+            box4=np.float32(cardinfo[cardinfo[:,0]=="BOX_XMAX",1][0])
+            boxarea=np.array([box3,box4,box1,box2])
+        except IndexError:
+            sys.exit("You specified 'box' for 'POINTAREA' but didn't properly specify 'BOX_YMIN', 'BOX_YMAX', 'BOX_XMIN', and 'BOX_XMAX'")
     else:
-        sys.exit("The shapefile needs to be in Lat/Lon")
-
-elif areatype.lower()=="point":
-    ptlat=np.float32(cardinfo[cardinfo[:,0]=="POINTLAT",1][0]) 
-    ptlon=np.float32(cardinfo[cardinfo[:,0]=="POINTLON",1][0]) 
-elif areatype.lower()=="box":
-    box1=np.float32(cardinfo[cardinfo[:,0]=="BOX_YMIN",1][0])
-    box2=np.float32(cardinfo[cardinfo[:,0]=="BOX_YMAX",1][0])
-    box3=np.float32(cardinfo[cardinfo[:,0]=="BOX_XMIN",1][0])
-    box4=np.float32(cardinfo[cardinfo[:,0]=="BOX_XMAX",1][0])
-    boxarea=np.array([box3,box4,box1,box2])
-
-else:
-    sys.exit("unrecognized area type")
+        sys.exit("unrecognized area type")
+except IndexError:
+    sys.exit("You didn't specify 'POINTAREA', which needs to either be set to 'basin', 'point', or 'box'")
     
-# RESAMPLING TYPE-THIS CODE IS UGLY...
-resampletype=cardinfo[cardinfo[:,0]=="RESAMPLER",1][0]
-if resampletype.lower()=='kernel':
-    resampletype='kernel'
-elif resampletype.lower()=='user':
-    resampletype='user'
-    sys.exit("sadly we aren't set up for manual resampling yet")
-elif resampletype.lower()=='uniform':
-    resampletype='uniform'
-elif resampletype.lower()=='intensity':
-    sys.exit('The "intensity-based" resampling scheme is not finished yet')
-    resampletype='intensity'
-    stackbins=cardinfo[cardinfo[:,0]=="NBINS",1][0]
-    try:
-        stackbins=np.int32(stackbins)
-    except:
-        sys.exit('NBINS is not an integer!')
-else:
-    sys.exit("You specified an unknown resampling method")
+
+# transposition
+try:
+    transpotype=cardinfo[cardinfo[:,0]=="TRANSPOSITION",1][0]
+    if transpotype.lower()=='kernel':
+        transpotype='kernel'
+        print "kernel density-based non-uniform storm transposition scheme selected!"
+    elif transpotype.lower()=='user':
+        transpotype='user'
+        sys.exit("sadly we aren't set up for user-specified transposition scheme yet")
+    elif transpotype.lower()=='uniform':
+        transpotype='uniform'
+        print "spatially uniform storm transposition scheme selected!"
+    elif transpotype.lower()=='intensity':
+        sys.exit('The "intensity-based" resampling scheme is not finished yet')
+        transpotype='intensity'
+        stackbins=cardinfo[cardinfo[:,0]=="NBINS",1][0]
+        try:
+            stackbins=np.int32(stackbins)
+        except:
+            sys.exit('NBINS is not an integer!')
+    else:
+        sys.exit("You specified an unknown resampling method")
+except Exception:
+    transpotype='uniform'
+    print "You didn't specify 'TRANSPOSITION', defaulting to spatially uniform scheme!"
     
-do_deterministic=cardinfo[cardinfo[:,0]=="DETERMINISTIC",1][0]
-if do_deterministic.lower():
-    deterministic=True
-else:
+try:   
+    do_deterministic=cardinfo[cardinfo[:,0]=="DETERMINISTIC",1][0]
+    if do_deterministic.lower():
+        deterministic=True
+    else:
+        deterministic=False
+except Exception:
     deterministic=False
 
+try:
+    domain_type=cardinfo[cardinfo[:,0]=="DOMAINTYPE",1][0] 
+except Exception:
+    domain_type='rectangular'
     
-lim1=np.float32(cardinfo[cardinfo[:,0]=="LATITUDE_MIN",1][0])
-lim2=np.float32(cardinfo[cardinfo[:,0]=="LATITUDE_MAX",1][0])
-lim3=np.float32(cardinfo[cardinfo[:,0]=="LONGITUDE_MIN",1][0]) 
-lim4=np.float32(cardinfo[cardinfo[:,0]=="LONGITUDE_MAX",1][0]) 
-inarea=np.array([lim3,lim4,lim1,lim2])
+if domain_type.lower()=='irregular':
+    print "Irregular domain type selected!"
+    domain_type='irregular'
+    domainshp=str(cardinfo[cardinfo[:,0]=="DOMAINSHP",1][0])
     
-DoDiagnostics=cardinfo[cardinfo[:,0]=="DIAGNOSTICPLOTS",1][0]
-if DoDiagnostics.lower()=='true':
-    DoDiagnostics=True
-else:
-    DoDiagnostics=False
+    if os.path.isfile(domainshp)==False:
+        sys.exit("can't find the transposition domain shapefile!")
+    else:
+        print "You selected 'irregular' for 'DOMAINTYPE', please note that if the domain shapefile is not in a regular lat/lon projection such as EPSG4326/WGS 84, the results will likely be incorrect!"
+        from osgeo import ogr
+        ds = ogr.Open(domainshp,0)
+        layer = ds.GetLayer()
+        inarea=np.array(layer.GetExtent(),dtype='float32')
+        
+#        os.system('gdal_rasterize -a AREA -ts 3000 3000 -l Iowa_shapefile -ot Float32 '+domainshp+' '+fullpath+'/temp.GTiff')
+#        os.system('gdalinfo '+fullpath+'/temp.GTiff >> '+fullpath+'/tempinfo.txt')
+#        finfo=open(fullpath+'/tempinfo.txt')
+#        domaininfo=finfo.readlines()
+#        if domaininfo[11]!='    AUTHORITY["EPSG","4326"]]\n':
+#            sys.exit('There is something wrong with the projection of the transposition domain input')     
+#        if domaininfo[19].split('Upper Left  ( ')==domaininfo[19]:
+#            sys.exit('There is something wrong with the parsing of the transposition domain info')
+#        else:
+#            inarea=np.empty((4),dtype='float32')
+#            minx1=np.float32(domaininfo[19].split('Upper Left  ( ')[1].split(',')[0])
+#            minx2=np.float32(domaininfo[20].split('Lower Left  ( ')[1].split(',')[0])
+#            inarea[0]=np.min(np.array([minx1,minx2]))
+#            
+#            maxx1=np.float32(domaininfo[21].split('Upper Right ( ')[1].split(',')[0])
+#            maxx2=np.float32(domaininfo[22].split('Lower Right ( ')[1].split(',')[0])
+#            inarea[1]=np.min(np.array([maxx1,maxx2]))
+#            
+#            maxy1=np.float32(domaininfo[19].split('Upper Left  ( ')[1].split(',')[1].split(')')[0])
+#            maxy2=np.float32(domaininfo[21].split('Upper Right ( ')[1].split(',')[1].split(')')[0])
+#            inarea[3]=np.min(np.array([maxy1,maxy2]))
+#            
+#            miny1=np.float32(domaininfo[20].split('Lower Left  ( ')[1].split(',')[1].split(')')[0])
+#            miny2=np.float32(domaininfo[22].split('Lower Right ( ')[1].split(',')[1].split(')')[0])
+#            inarea[2]=np.min(np.array([miny1,miny2]))
+#            #domainmask=RainyDay.rastermaskGDAL(domainshp,shpproj,rainprop,'fraction',fullpath)
+#            #domainmask=catmask.reshape(ingridx.shape,order='F')
+else:  
+    print "rectangular domain type selected!"
+    domain_type='rectangular'   
+    try:
+        lim1=np.float32(cardinfo[cardinfo[:,0]=="LATITUDE_MIN",1][0])
+        lim2=np.float32(cardinfo[cardinfo[:,0]=="LATITUDE_MAX",1][0])
+        lim3=np.float32(cardinfo[cardinfo[:,0]=="LONGITUDE_MIN",1][0]) 
+        lim4=np.float32(cardinfo[cardinfo[:,0]=="LONGITUDE_MAX",1][0]) 
+        inarea=np.array([lim3,lim4,lim1,lim2])
+    except IndexError:
+        sys.exit("need to specify 'LATITUDE_MIN', 'LATITUDE_MAX', 'LONGITUDE_MIN', 'LONGITUDE_MAX'")
+
+
+try:  
+    DoDiagnostics=cardinfo[cardinfo[:,0]=="DIAGNOSTICPLOTS",1][0]
+    if DoDiagnostics.lower()=='true':
+        DoDiagnostics=True
+    else:
+        DoDiagnostics=False
+except Exception:
+    DoDiagnostics=True  
     
 diagpath=fullpath+'/Diagnostics/'
 if os.path.isdir(wd+scenarioname+'/Diagnostics')==False:
     os.system('mkdir %s' %(diagpath))
 #diagpath=diagpath+'/'+scenarioname
 
-FreqAnalysis=cardinfo[cardinfo[:,0]=="FREQANALYSIS",1][0]
-if FreqAnalysis.lower()=='true':
+try:
+    FreqAnalysis=cardinfo[cardinfo[:,0]=="FREQANALYSIS",1][0]
+    if FreqAnalysis.lower()=='true':
+        FreqAnalysis=True
+    else:
+        FreqAnalysis=False
+except Exception:
     FreqAnalysis=True
-else:
-    FreqAnalysis=False
     
-DoDiagMovies=cardinfo[cardinfo[:,0]=="DIAGNOSTICMOVIES",1][0]
-if DoDiagMovies.lower()=='true':
-    DoDiagMovies=True
-    #matplotlib.use("Agg")
-    import matplotlib.animation as manimation
-    #FFMpegWriter = manimation.writers['ffmpeg']
-else:
-    DoDiagMovies=False
+try:
+    DoDiagMovies=cardinfo[cardinfo[:,0]=="DIAGNOSTICMOVIES",1][0]
+    if DoDiagMovies.lower()=='true':
+        DoDiagMovies=True
+        #matplotlib.use("Agg")
+        import matplotlib.animation as manimation
+        #FFMpegWriter = manimation.writers['ffmpeg']
+    else:
+        DoDiagMovies=False
+except Exception:
+    DoDiagMovies=False   
         
 FreqFile=fullpath+'/'+scenarioname+'.FreqAnalysis'
 
-Scenarios=cardinfo[cardinfo[:,0]=="SCENARIOS",1][0]
-if Scenarios.lower()=='true':
-    Scenarios=True
-    WriteName=wd+'/'+scenarioname+'/Realizations'
-    os.system('mkdir %s' %(WriteName))
-    WriteName=WriteName+'/'+scenarioname
-else:
+try:
+    Scenarios=cardinfo[cardinfo[:,0]=="SCENARIOS",1][0]
+    if Scenarios.lower()=='true':
+        Scenarios=True
+        WriteName=wd+'/'+scenarioname+'/Realizations'
+        os.system('mkdir %s' %(WriteName))
+        WriteName=WriteName+'/'+scenarioname
+    else:
+        Scenarios=False
+except Exception:
     Scenarios=False
+    print "You didn't specify 'SCENARIOS', defaulting to 'false', no scenarios will be written!"
 
 # EXLCUDE CERTAIN MONTHS
-exclude=cardinfo[cardinfo[:,0]=="EXCLUDEMONTHS",1][0]
-if exclude.lower()!="none":
-    exclude=exclude.split(',')
-    excludemonths=np.empty(len(exclude),dtype="int32")
-    for i in range(0,len(exclude)):
-        excludemonths[i]=np.int(exclude[i])
-else:
+try:
+    exclude=cardinfo[cardinfo[:,0]=="EXCLUDEMONTHS",1][0]
+    if exclude.lower()!="none":
+        exclude=exclude.split(',')
+        excludemonths=np.empty(len(exclude),dtype="int32")
+        for i in range(0,len(exclude)):
+            excludemonths[i]=np.int(exclude[i])
+    else:
+        excludemonths=False
+except Exception:
     excludemonths=False
     
 # INCLUDE ONLY CERTAIN YEARS
-includeyr=cardinfo[cardinfo[:,0]=="INCLUDEYEARS",1][0] 
-if includeyr.lower()!="all":
-    if ',' in includeyr:
-        includeyr=includeyr.split(',')
-        includeyears=np.empty(len(includeyr),dtype="int32")
-        for i in range(0,len(includeyr)):
-            includeyears[i]=np.int(includeyr[i])
-    elif '-' in includeyr:
-        includeyr=includeyr.split('-')
-        includeyears=np.arange(np.int(includeyr[0]),np.int(includeyr[1])+1,dtype='int32')
+try:
+    includeyr=cardinfo[cardinfo[:,0]=="INCLUDEYEARS",1][0] 
+    if includeyr.lower()!="all":
+        if ',' in includeyr:
+            includeyr=includeyr.split(',')
+            includeyears=np.empty(len(includeyr),dtype="int32")
+            for i in range(0,len(includeyr)):
+                includeyears[i]=np.int(includeyr[i])
+        elif '-' in includeyr:
+            includeyr=includeyr.split('-')
+            includeyears=np.arange(np.int(includeyr[0]),np.int(includeyr[1])+1,dtype='int32')
+        else:
+            includeyears=np.empty((1),dtype="int32")
+            includeyears[0]=np.int(includeyr)
     else:
-        includeyears=np.empty((1),dtype="int32")
-        includeyears[0]=np.int(includeyr)
-else:
+        includeyears=False
+except Exception:
     includeyears=False
 
 # MINIMUM RETURN PERIOD THRESHOLD FOR WRITING RAINFALL SCENARIO (THIS WILL HAVE A HUGE IMPACT ON THE SIZE OF THE OUTPUT FILES!)  IN PRINCIPLE IT IS PERHAPS BETTER TO USE AN INTENSITY BUT THIS IS CLEANER!
-RainfallThreshYear=np.int(cardinfo[cardinfo[:,0]=="RETURNTHRESHOLD",1][0])
+try:
+    RainfallThreshYear=np.int(cardinfo[cardinfo[:,0]=="RETURNTHRESHOLD",1][0])
+except Exception:
+    RainfallThreshYear=1
 
 # DIRECTORY INFO-WHERE DOES THE INPUT DATASET RESIDE?
-inpath=str(cardinfo[cardinfo[:,0]=="RAINPATH",1][0])
+try:
+    inpath=str(cardinfo[cardinfo[:,0]=="RAINPATH",1][0])
+except IndexError:
+    sys.exit("You didn't specify 'RAINPATH', which is a required field!")
 
       
-    
-BaseMap=cardinfo[cardinfo[:,0]=="BASEMAP",1][0]
-if BaseMap.lower()!='none':
-    BaseMap=BaseMap.split('.')[0]
-    BaseField=cardinfo[cardinfo[:,0]=="BASEFIELD",1][0]
+try:   
+    BaseMap=cardinfo[cardinfo[:,0]=="BASEMAP",1][0]
+    if BaseMap.lower()!='none':
+        BaseMap=BaseMap.split('.')[0]
+        BaseField=cardinfo[cardinfo[:,0]=="BASEFIELD",1][0]
+except Exception:
+    BaseMap='none'
 
 
 # SENSITIVITY ANALYSIS OPTIONS:
-IntensitySens=cardinfo[cardinfo[:,0]=="SENS_INTENSITY",1][0]
-if IntensitySens.lower()!='false':
-    IntensitySens=1.+np.float(IntensitySens)/100.
-else:
+try:
+    IntensitySens=cardinfo[cardinfo[:,0]=="SENS_INTENSITY",1][0]
+    if IntensitySens.lower()!='false':
+        IntensitySens=1.+np.float(IntensitySens)/100.
+    else:
+        IntensitySens=1.
+except Exception:
     IntensitySens=1.
 
-FrequencySens=cardinfo[cardinfo[:,0]=="SENS_FREQUENCY",1][0]     
-if FrequencySens.lower()!='false':
-    if samplingtype.lower()!='poisson':
-        sys.exit("Sorry, you can't modify the resampling frequency unless you use the Poisson resampler.")
+try:
+    FrequencySens=cardinfo[cardinfo[:,0]=="SENS_FREQUENCY",1][0]     
+    if FrequencySens.lower()!='false':
+        if samplingtype.lower()!='poisson':
+            sys.exit("Sorry, you can't modify the resampling frequency unless you use the Poisson resampler.")
+        else:
+            FrequencySens=1.0+np.float(FrequencySens)/100.
     else:
-        FrequencySens=1.0+np.float(FrequencySens)/100.
-else:
-    FrequencySens=1.
+        FrequencySens=1.
+except Exception:
+    FrequencySens=1.    
+    pass
 
-    
-userdistr=cardinfo[cardinfo[:,0]=="INTENSDISTR",1][0]
-if userdistr.lower()=='false':
+
+try:    
+    userdistr=cardinfo[cardinfo[:,0]=="INTENSDISTR",1][0]
+    if userdistr.lower()=='false':
+        userdistr=np.zeros((1),dtype='bool')
+    elif len(userdistr.split(','))==3:
+        print "reading user-defined rainfall intensity distribution..."
+        userdistr=np.array(userdistr.split(','),dtype='float32')
+    else:
+        sys.exit("There is a problem with the INTENSDISTR entry!")
+except Exception:
     userdistr=np.zeros((1),dtype='bool')
-elif len(userdistr.split(','))==3:
-    print "reading user-defined rainfall intensity distribution..."
-    userdistr=np.array(userdistr.split(','),dtype='float32')
-else:
-    sys.exit("There is a problem with the INTENSDISTR entry!")
+    pass
+    
  
 if Scenarios:
-    if np.any(np.core.defchararray.find(cardinfo[:,0],"SPINPERIOD")>-1):
-        pretime=cardinfo[cardinfo[:,0]=="SPINPERIOD",1][0]   
-         
-        if pretime.lower()=='none':
-            prependrain=False
-            print 'spinup rainfall will be not included in rainfall scenarios...'
+    try:
+        if np.any(np.core.defchararray.find(cardinfo[:,0],"SPINPERIOD")>-1):
+            pretime=cardinfo[cardinfo[:,0]=="SPINPERIOD",1][0]   
+             
+            if pretime.lower()=='none':
+                prependrain=False
+                print 'spinup rainfall will be not included in rainfall scenarios...'
+            else:
+                try:
+                    pretime=np.int(pretime)
+                    prependrain=True
+                    if pretime==0.:
+                        prependrain=False
+                        print 'the spinup time you provided was 0, no spinup rainfall will be included...'
+                    elif pretime<0.:
+                        print "the spin-up time value is negative."
+                        sys.exit(0)
+                    elif pretime<1.:
+                        print 'the spinup time you provided was short, rounding up to 1 day...'
+                        pretime=1.0
+                    else:
+                        print np.str(pretime)+' days of spinup rainfall will be included in rainfall scenarios...'
+                except:
+                    sys.exit('unrecognized value provided for SPINPERIOD.')
+               
         else:
-            try:
-                pretime=np.int(pretime)
-                prependrain=True
-                if pretime==0.:
-                    prependrain=False
-                    print 'the spinup time you provided was 0, no spinup rainfall will be included...'
-                elif pretime<0.:
-                    print "the spin-up time value is negative."
-                    sys.exit(0)
-                elif pretime<1.:
-                    print 'the spinup time you provided was short, rounding up to 1 day...'
-                    pretime=1.0
-                else:
-                    print np.str(pretime)+' days of spinup rainfall will be included in rainfall scenarios...'
-            except:
-                sys.exit('unrecognized value provided for SPINPERIOD.')
-           
-    else:
-        prependrain=False
+            prependrain=False
+            print 'no SPINPERIOD field was provided.  Spin-up rainfall will be not be included...'
+    except Exception:
         print 'no SPINPERIOD field was provided.  Spin-up rainfall will be not be included...'
 
-if np.any(np.core.defchararray.find(cardinfo[:,0],"SPREADTYPE")>-1):       
-    spread=cardinfo[cardinfo[:,0]=="SPREADTYPE",1][0]
-    if spread.lower()=='ensemble':
-        spreadtype='ensemble'
-        print '"ensemble spread" will be calculated for rainfall frequency analysis...'
+try:
+    if np.any(np.core.defchararray.find(cardinfo[:,0],"SPREADTYPE")>-1):       
+        spread=cardinfo[cardinfo[:,0]=="SPREADTYPE",1][0]
+        if spread.lower()=='ensemble':
+            spreadtype='ensemble'
+            print '"ensemble spread" will be calculated for rainfall frequency analysis...'
+        else:
+            try:
+                int(spread)
+            except:
+                print 'unrecognized value for SPREADTYPE.'
+                
+            if int(spread)>=0 and int(spread)<=100:
+                spreadtype='quantile'
+                quantilecalc=int(spread)
+                print spread+'th quantiles will be calculated for rainfall frequency analysis...'
+            else: 
+                sys.exit('invalid quantile range for frequency analysis...')
     else:
-        try:
-            int(spread)
-        except:
-            print 'unrecognized value for SPREADTYPE.'
-            
-        if int(spread)>=0 and int(spread)<=100:
-            spreadtype='quantile'
-            quantilecalc=int(spread)
-            print spread+'th quantiles will be calculated for rainfall frequency analysis...'
-        else: 
-            print 'invalid quantile range for frequency analysis...'
-else:
+        spreadtype='ensemble'
+except Exception:
     spreadtype='ensemble'
                 
-    
-if np.any(np.core.defchararray.find(cardinfo[:,0],"RETURNLEVELS")>-1):
-    speclevels=cardinfo[cardinfo[:,0]=="RETURNLEVELS",1][0]
-    if speclevels.lower()=='all':
-        print 'using all return levels...'
+try:    
+    if np.any(np.core.defchararray.find(cardinfo[:,0],"RETURNLEVELS")>-1):
+        speclevels=cardinfo[cardinfo[:,0]=="RETURNLEVELS",1][0]
+        if speclevels.lower()=='all':
+            print 'using all return levels...'
+            alllevels=True
+        else:
+            alllevels=False
+            if ',' in speclevels:
+                speclevels=speclevels.split(',')
+                try:
+                    speclevels=np.float32(speclevels,dtype="float32")
+                except:
+                    print "Non-numeric value provided to RETURNLEVELS."
+                    
+                speclevels=speclevels[speclevels<=nsimulations+0.00001]
+                speclevels=speclevels[speclevels>=0.99999]
+            else:
+                sys.exit("The format of RETURNLEVELS isn't recognized.  It should be 'all' or a comma separated list.")
+    else:
         alllevels=True
-    else:
-        alllevels=False
-        if ',' in speclevels:
-            speclevels=speclevels.split(',')
-            try:
-                speclevels=np.float32(speclevels,dtype="float32")
-            except:
-                print "Non-numeric value provided to RETURNLEVELS."
-                
-            speclevels=speclevels[speclevels<=nsimulations+0.00001]
-            speclevels=speclevels[speclevels>=0.99999]
-        else:
-            sys.exit("The format of RETURNLEVELS isn't recognized.  It should be 'all' or a comma separated list.")
-else:
-    alllevels=True
+except Exception:
+    alllevels=True    
       
-      
-rotation=False
-if np.any(np.core.defchararray.find(cardinfo[:,0],"ROTATIONANGLE")>-1):
-    rotangle=cardinfo[cardinfo[:,0]=="ROTATIONANGLE",1][0]
-    if rotangle.lower()=='none' or areatype.lower()=="point":
-        rotation=False            
-    else:
-        rotation=True
-        if len(rotangle.lower().split(','))!=3:
-            sys.exit('Unrecognized entry provided for ROTATIONANGLE.  Should be "none" or "-X,+Y,Nangles".')
+     
+try:
+    rotation=False
+    if np.any(np.core.defchararray.find(cardinfo[:,0],"ROTATIONANGLE")>-1):
+        try:
+            rotangle=cardinfo[cardinfo[:,0]=="ROTATIONANGLE",1][0]
+        except IndexError:
+            "You're trying to use storm rotation, but didn't specify 'ROTATIONANGLE'"
+        if rotangle.lower()=='none' or areatype.lower()=="point":
+            rotation=False            
         else:
-            minangle,maxangle,nanglebins=rotangle.split(',')
-            try:
-                minangle=np.float32(minangle)
-            except:
-                print 'Unrecognized entry provided for ROTATIONANGLE minimum angle.'
-            try:
-                maxangle=np.float32(maxangle)
-            except:
-                print 'Unrecognized entry provided for ROTATIONANGLE maximum angle.'
-            try:
-                nanglebins=np.int32(nanglebins,dtype="float32")
-            except:
-                print 'Unrecognized entry provided for ROTATIONANGLE number of bins.'
-                
-            if minangle>0. or maxangle<0.:
-                sys.exit('The minimum angle should be negative and the maximum angle should be positive.')
+            rotation=True
+            if len(rotangle.lower().split(','))!=3:
+                sys.exit('Unrecognized entry provided for ROTATIONANGLE.  Should be "none" or "-X,+Y,Nangles".')
+            else:
+                minangle,maxangle,nanglebins=rotangle.split(',')
+                try:
+                    minangle=np.float32(minangle)
+                except:
+                    print 'Unrecognized entry provided for ROTATIONANGLE minimum angle.'
+                try:
+                    maxangle=np.float32(maxangle)
+                except:
+                    print 'Unrecognized entry provided for ROTATIONANGLE maximum angle.'
+                try:
+                    nanglebins=np.int32(nanglebins,dtype="float32")
+                except:
+                    print 'Unrecognized entry provided for ROTATIONANGLE number of bins.'
+                    
+                if minangle>0. or maxangle<0.:
+                    sys.exit('The minimum angle should be negative and the maximum angle should be positive.')
+except Exception:
+    rotation=False   
     
 if rotation:
     print "storm rotation will be used..."
     delarray=[]
 
-    spversion=sp.__version__.split('.')
-    if int(spversion[0])<1:
-        if int(spversion[1])<9:
-            sys.exit('Your version of Scipy is too old to handle the rotation scheme.  Either do not use rotation or update Scipy.')
+spversion=sp.__version__.split('.')
+if int(spversion[0])<1:
+    if int(spversion[1])<9:
+        sys.exit('Your version of Scipy is too old to handle the rotation scheme.  Either do not use rotation or update Scipy.')
   
 # should add a "cell-centering" option!
 
@@ -505,7 +680,7 @@ rainprop=deepcopy(emptyprop)
 #else:
 tempdur=duration   
     
-print "SHOULD CHECK FOR ROBUSTNESS OF NODATA LATER ON"
+#print "SHOULD CHECK FOR ROBUSTNESS OF NODATA LATER ON"
    
  
 #==============================================================================
@@ -546,7 +721,7 @@ else:
         sys.exit("can't find the storm catalog")
     else:
         #catrain,cattime,latrange,lonrange,catx,caty,catmax,_=RainyDay.readcatalog(catalogname)
-        rainprop.spatialres,rainprop.dimensions,rainprop.bndbox,rainprop.timeres,rainprop.nodata,catrain,cattime,latrange,lonrange,catx,caty,catmax=RainyDay.rainprop_setup(catalogname,catalog=True)
+        rainprop.spatialres,rainprop.dimensions,rainprop.bndbox,rainprop.timeres,rainprop.nodata,catrain,cattime,latrange,lonrange,catx,caty,catmax,domainmask=RainyDay.rainprop_setup(catalogname,catalog=True)
         if nstorms>cattime.shape[0]:
             print "WARNING: The storm catalog has fewer storms than the specified nstorms"
             nstorms=cattime.shape[0] 
@@ -617,7 +792,15 @@ elif areatype.lower()=="box":
 else:
     sys.exit("unrecognized area type!")
     
-        
+ 
+if domain_type.lower()=='irregular':
+    domainmask=RainyDay.rastermaskGDAL(domainshp,domainproj,rainprop,'simple',fullpath).astype('float32')
+    #domainmask=catmask.reshape(ingridx.shape,order='F')
+else:
+    domainmask=np.ones((catmask.shape),dtype='float32')    
+
+
+       
 # TRIM THE GRID DOWN
 csum=np.where(np.sum(catmask,axis=0)==0)
 rsum=np.where(np.sum(catmask,axis=1)==0)
@@ -704,10 +887,16 @@ if CreateCatalog:
             temparray=np.squeeze(np.nansum(rainarray[subtimeind,:],axis=1))
             
             if numbacheck:
-                rainmax,ycat,xcat=RainyDay.catalogNumba(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)
+                if domain_type=='irregular':
+                    rainmax,ycat,xcat=RainyDay.catalogNumba_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask)
+                else:
+                    rainmax,ycat,xcat=RainyDay.catalogNumba(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)
             else:
-                rainmax,ycat,xcat=RainyDay.catalogAlt(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)
-                                
+                if domain_type=='irregular':
+                    rainmax,ycat,xcat=RainyDay.catalogAlt_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask)
+                else:
+                    rainmax,ycat,xcat=RainyDay.catalogAlt(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)
+                                                                
 
             tempmin=np.min(catmax)
             if rainmax>tempmin:
@@ -742,7 +931,8 @@ if CreateCatalog:
     
     # WRITE CATALOG
     print "writing storm catalog..."
-    RainyDay.writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,nstorms,catmask,parameterfile)   
+    print "need to write the domain mask to the catalog, and also add reading the domain mask back in!"
+    RainyDay.writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,nstorms,catmask,parameterfile,domainmask)   
 
 
 #################################################################################
@@ -759,7 +949,12 @@ if CreateCatalog==False:
                 
 # EXLCUDE "BAD" STORMS OR FOR DOING SENSITIVITY ANALYSIS TO PARTICULAR STORMS.  THIS IS PARTICULARLY NEEDED FOR ANY RADAR RAINFALL PRODUCT WITH SERIOUS ARTIFACTS
 includestorms=np.ones((len(catmax)),dtype="bool")
-exclude=cardinfo[cardinfo[:,0]=="EXCLUDESTORMS",1][0] 
+
+try:
+    exclude=cardinfo[cardinfo[:,0]=="EXCLUDESTORMS",1][0] 
+except Exception:
+    exclude='none'
+    
 if exclude.lower()!="none":
     exclude=exclude.split(',')
     for i in range(0,len(exclude)):
@@ -835,10 +1030,15 @@ if CreateCatalog==False:
                 if weavecheck:
                     maxtemp,tempy,tempx=RainyDay.catalogweave(maxpass,trimmask,np.int(xlen),np.int(ylen),np.int(maskheight),np.int(maskwidth),rainsum)    
                 elif numbacheck:
-                    maxtemp,tempy,tempx=RainyDay.catalogNumba(maxpass,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)                       
+                    if domain_type.lower()=='irregular':
+                        maxtemp,tempy,tempx=RainyDay.catalogNumba(maxpass,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask)   
+                    else:
+                        maxtemp,tempy,tempx=RainyDay.catalogNumba(maxpass,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)                       
                 else:
-                    maxtemp,tempy,tempx=RainyDay.catalogAlt(maxpass,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)    
-                    
+                    if domain_type.lower()=='irregular':
+                        maxtemp,tempy,tempx=RainyDay.catalogAlt_irregular(maxpass,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask)    
+                    else:
+                        maxtemp,tempy,tempx=RainyDay.catalogAlt(maxpass,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)    
                 if maxtemp>dur_max:
                     dur_max=maxtemp
                     dur_x=tempx
@@ -877,26 +1077,40 @@ if userdistr.all()!=False:
 #==============================================================================
 print "calculating kernel density smoother..."
 
-kx,ky=np.meshgrid(range(0,rainprop.subdimensions[1]-maskwidth),range(0,rainprop.subdimensions[0]-maskheight))
+kx,ky=np.meshgrid(np.arange(0,rainprop.subdimensions[1]-maskwidth+1),np.arange(0,rainprop.subdimensions[0]-maskheight+1))
+
 kpositions=np.vstack([ky.ravel(),kx.ravel()])
+
 
 checkind=np.where(np.logical_and(np.logical_and(caty!=0,catx!=0),np.logical_and(caty!=ylen-1,catx!=xlen-1)))
 
 invalues=np.vstack([caty[checkind], catx[checkind]])
 stmkernel=stats.gaussian_kde(invalues)
-pltkernel=np.reshape(stmkernel(kpositions), kx.shape)
+pltkernel=np.multiply(np.reshape(stmkernel(kpositions), kx.shape),domainmask[0:rainprop.subdimensions[0]-maskheight+1,0:rainprop.subdimensions[1]-maskwidth+1])
+pltkernel=pltkernel/np.nansum(pltkernel)
 
-pltkernel=pltkernel/np.sum(pltkernel)
-cumkernel=np.reshape(np.cumsum(pltkernel),(kx.shape))
+tempmask=deepcopy(domainmask[0:rainprop.subdimensions[0]-maskheight+1,0:rainprop.subdimensions[1]-maskwidth+1])
+
+if transpotype=='uniform':
+    tempsum=np.nansum(domainmask[0:rainprop.subdimensions[0]-maskheight+1,0:rainprop.subdimensions[1]-maskwidth+1])
+    temparr=np.arange(1.,tempsum+1.)/tempsum
+    tempmask[np.equal(tempmask,0.)]=np.nan
+    tempmask[~np.isnan(tempmask)]=temparr
+    tempmask[np.isnan(tempmask)]=100.
+    cumkernel=tempmask
+elif transpotype=='kernel':
+    cumkernel=np.array(np.reshape(np.cumsum(pltkernel),(kx.shape)),dtype=np.float64)
+    tempmask[np.equal(tempmask,0.)]=100.
+    cumkernel[np.equal(tempmask,100.)]=100.
 
 
 #==============================================================================
 # If you're using intensity-dependent resampling, calculate the kernel "stack"
 #==============================================================================
-if resampletype=='intensity':
+if transpotype=='intensity':
 
     print 'calculating kernel density "stack" for intensity-dependent resampling...'
-    
+    sys.exit("I'm not sure this is working")
 
     stackkernel=np.empty((stackbins,cumkernel.shape[0],cumkernel.shape[1]),dtype='float64')
     stackcat=np.empty((stackbins),dtype='float32')
@@ -1158,7 +1372,7 @@ if rotation==True:
 
 # DOES THIS PROPERLY HANDLE STORM EXCLUSIONS???  I think so...
 for i in range(0,np.nanmax(ncounts)):
-    whichstorms[i,ncounts>=i+1]=np.random.randint(0,nstorms-1,(len(ncounts[ncounts>=i+1])))
+    whichstorms[i,ncounts>=i+1]=np.random.randint(0,nstorms,(len(ncounts[ncounts>=i+1]))) # why was this previously "nstorms-1"??? Bug?
 
 whichrain=np.zeros((whichstorms.shape),dtype='float32')
 testrain=np.zeros((whichstorms.shape),dtype='float32')
@@ -1168,38 +1382,36 @@ whichy=np.zeros((whichstorms.shape),dtype='int32')
 
 for i in range(0,nstorms):
     # UNIFORM RESAMPLING
-    if resampletype=='uniform':
-        whichx[whichstorms==i]=np.random.randint(0,np.int(rainprop.subdimensions[1])-maskwidth-1,len(whichx[whichstorms==i]))
-        whichy[whichstorms==i]=np.random.randint(0,np.int(rainprop.subdimensions[0])-maskheight-1,len(whichy[whichstorms==i]))
+    if transpotype=='uniform' and domain_type=='rectangular':
+        whichx[whichstorms==i]=np.random.randint(0,np.int(rainprop.subdimensions[1])-maskwidth+1,len(whichx[whichstorms==i]))
+        whichy[whichstorms==i]=np.random.randint(0,np.int(rainprop.subdimensions[0])-maskheight+1,len(whichy[whichstorms==i]))
  
-    # KERNEL-BASED RESAMPLING
-    elif resampletype=='kernel':
+    # KERNEL-BASED RESAMPLING (ALSO NEEDED FOR IRREGULAR TRANSPOSITION DOMAINS)
+    elif transpotype=='kernel' or domain_type=='irregular':
         rndloc=np.random.random_sample(len(whichx[whichstorms==i]))
-        if weavecheck:
-            whichx[whichstorms==i],whichy[whichstorms==i]=RainyDay.weavekernel(rndloc,cumkernel)
-        elif numbacheck:
-            whichx[whichstorms==i],whichy[whichstorms==i]=RainyDay.numbakernel(rndloc,cumkernel)
+        if numbacheck:
+            tempx=np.empty((len(rndloc)),dtype=np.int32)
+            tempy=np.empty((len(rndloc)),dtype=np.int32)
+            whichx[whichstorms==i],whichy[whichstorms==i]=RainyDay.numbakernel(rndloc,cumkernel,tempx,tempy)
         else:
             whichx[whichstorms==i],whichy[whichstorms==i]=RainyDay.pykernel(rndloc,cumkernel)
         
     
     # SET UP MANUAL PDF RESAMPLING
-    elif resampletype=='manual':  
+    elif transpotype=='manual':  
         sys.exit("not configured for manually supplied pdf yet!")
         
     # "STACK" FOR INTENSITY-CONDITIONED RESAMPLING
-    elif resampletype=='intensity':
-        rndloc=np.random.random_sample(len(whichx[whichstorms==i]))
+    elif transpotype=='intensity':
+        rndloc=np.array(np.random.random_sample(len(whichx[whichstorms==i])),dtype=np.float64)
         tempkernel=stackkernel[np.where((catmax[i]> (stackcat-0.001) )==True)[0][-1],:]
-        if weavecheck:
-            whichx[whichstorms==i],whichy[whichstorms==i]=RainyDay.weavekernel(rndloc,tempkernel)
-        elif numbacheck:
+        if numbacheck:
             whichx[whichstorms==i],whichy[whichstorms==i]=RainyDay.numbakernel(rndloc,tempkernel)
         else:
             whichx[whichstorms==i],whichy[whichstorms==i]=RainyDay.pykernel(rndloc,tempkernel)
 
 
-    passrain=np.nansum(catrain[i,:],axis=0)
+    passrain=np.nansum(catrain[i,:],axis=0)         # time-average the rainfall
 
     if rotation: 
         print 'rotating storms for transposition, '+str(100*(i+1)/nstorms)+'% complete...'
@@ -1500,9 +1712,9 @@ if Scenarios:
             outtime[writestorm[:,rlz]==unqstm[i],:]=cattime[unqstm[i],:] 
         
         if rotation:
-            outrain=RainyDay.SSTspin_write_v2(catrain,writex[:,rlz],writey[:,rlz],writestorm[:,rlz],nanmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,cattime[:,-1],rainprop,rlzanglebin=binwriteang[:,rlz],delarray=delarray,spin=prependrain,flexspin=False,samptype=resampletype,cumkernel=cumkernel,rotation=rotation)
+            outrain=RainyDay.SSTspin_write_v2(catrain,writex[:,rlz],writey[:,rlz],writestorm[:,rlz],nanmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,cattime[:,-1],rainprop,rlzanglebin=binwriteang[:,rlz],delarray=delarray,spin=prependrain,flexspin=False,samptype=transpotype,cumkernel=cumkernel,rotation=rotation,domaintype=domain_type)
         else:
-            outrain=RainyDay.SSTspin_write_v2(catrain,writex[:,rlz],writey[:,rlz],writestorm[:,rlz],nanmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,cattime[:,-1],rainprop,spin=prependrain,flexspin=False,samptype=resampletype,cumkernel=cumkernel,rotation=rotation)
+            outrain=RainyDay.SSTspin_write_v2(catrain,writex[:,rlz],writey[:,rlz],writestorm[:,rlz],nanmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,cattime[:,-1],rainprop,spin=prependrain,flexspin=False,samptype=transpotype,cumkernel=cumkernel,rotation=rotation,domaintype=domain_type)
 
         outrain[:,:,np.isclose(trimmask,0.)]=-9999.               # this line produced problems in CUENCAS CONVERSIONS :(
         writename=WriteName+'_SSTrlz'+str(rlz+1)+'.nc'

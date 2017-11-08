@@ -104,17 +104,48 @@ def find_nearest(array,value):
 #    
 
 
-def catalogAlt(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum):
+def catalogAlt(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask):
+    rainsum[:]=0.
+    for i in range(0,(ylen)*(xlen)):
+        y=i/xlen
+        x=i-y*xlen
+        #print x,
+        rainsum[y,x]=np.nansum(np.multiply(temparray[(y):(y+maskheight),(x):(x+maskwidth)],trimmask))
+    #wheremax=np.argmax(rainsum)
+    rmax=np.nanmax(rainsum)
+    wheremax=np.where(rainsum==rmax)
+    return rmax, wheremax[0][0], wheremax[1][0]
+
+def catalogAlt_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask):
     rainsum[:]=0.
     for i in range(0,(ylen)*(xlen)):
         y=i/xlen
         x=i-y*xlen
         #print x,y
-        rainsum[y,x]=np.nansum(np.multiply(temparray[(y):(y+maskheight),(x):(x+maskwidth)],trimmask))
+        if np.any(np.equal(domainmask[y+maskheight/2,:],1.)) and np.any(np.equal(domainmask[:,x+maskwidth/2],1.)):
+            rainsum[y,x]=np.nansum(np.multiply(temparray[(y):(y+maskheight),(x):(x+maskwidth)],trimmask))
+        else:
+            rainsum[y,x]=0.
     #wheremax=np.argmax(rainsum)
     rmax=np.nanmax(rainsum)
     wheremax=np.where(rainsum==rmax)
     
+    return rmax, wheremax[0][0], wheremax[1][0]
+
+@jit(nopython=True)
+def catalogNumba_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask):
+    rainsum[:]=0.
+    for i in range(0,(ylen)*(xlen)):
+        y=i/xlen
+        x=i-y*xlen
+        #print x,y
+        if np.any(np.equal(domainmask[y+maskheight/2,:],1.)) and np.any(np.equal(domainmask[:,x+maskwidth/2],1.)):
+            rainsum[y,x]=np.nansum(np.multiply(temparray[(y):(y+maskheight),(x):(x+maskwidth)],trimmask))
+        else:
+            rainsum[y,x]=0.
+    #wheremax=np.argmax(rainsum)
+    rmax=np.nanmax(rainsum)
+    wheremax=np.where(rainsum==rmax)
     return rmax, wheremax[0][0], wheremax[1][0]
 
 @jit(nopython=True)
@@ -125,6 +156,7 @@ def catalogNumba(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum):
         x=i-y*xlen
         #print x,y
         rainsum[y,x]=np.nansum(np.multiply(temparray[(y):(y+maskheight),(x):(x+maskwidth)],trimmask))
+
     #wheremax=np.argmax(rainsum)
     rmax=np.nanmax(rainsum)
     wheremax=np.where(rainsum==rmax)
@@ -223,7 +255,7 @@ def SSTalt(passrain,whichx,whichy,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwi
 #==============================================================================
 # SAME AS ABOVE, BUT A BIT MORE DYNAMIC IN TERMS OF SPINUP
 #==============================================================================    
-def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,ptime,rainprop,rlzanglebin=None,delarray=None,spin=False,flexspin=True,samptype='uniform',cumkernel=None,rotation=False):
+def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,ptime,rainprop,rlzanglebin=None,delarray=None,spin=False,flexspin=True,samptype='uniform',cumkernel=None,rotation=False,domaintype='rectangular'):
     catyears=ptime.astype('datetime64[Y]').astype(int)+1970
     ptime=ptime.astype('datetime64[M]').astype(int)-(catyears-1970)*12+1
     nyrs=np.int(rlzx.shape[0])
@@ -238,9 +270,9 @@ def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskh
         pretimeind=np.where(np.logical_and(ptime>unqmonth-1,ptime<unqmonth+1))[0]
         
         if spin==True and flexspin==True:
-            if samptype=='kernel':
+            if samptype=='kernel' or domaintype=='irregular':
                 rndloc=np.random.random_sample(len(unqwhere))
-                shiftprex,shiftprey=weavekernel(rndloc,cumkernel)
+                shiftprex,shiftprey=numbakernel(rndloc,cumkernel)
             else:
                 shiftprex=np.random.random_integers(0,np.int(rainprop.subdimensions[1])-maskwidth-1,len(unqwhere))
                 shiftprey=np.random.random_integers(0,np.int(rainprop.subdimensions[0])-maskheight-1,len(unqwhere))
@@ -320,7 +352,6 @@ def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskh
     
 def pykernel(rndloc,cumkernel):
     nlocs=len(rndloc)
-    nrows=cumkernel.shape[0]
     ncols=cumkernel.shape[1]
     tempx=np.empty((len(rndloc)),dtype="int32")
     tempy=np.empty((len(rndloc)),dtype="int32")
@@ -328,30 +359,37 @@ def pykernel(rndloc,cumkernel):
     flatkern=np.append(0.,cumkernel.flatten())
     
     for i in range(0,nlocs):
-        whereind=np.where(np.logical_and(rndloc[i]>flatkern[0:-1],rndloc[i]<=flatkern[1:]))[0][0]
+        x=rndloc[i]-flatkern
+        x[np.less(x,0.)]=np.nan
+        whereind = np.nanargmin(x)-1
         y=whereind/ncols
         x=whereind-y*ncols        
         tempx[i]=x
         tempy[i]=y
     return tempx,tempy
 
-@jit(nopython=True)
-def numbakernel(rndloc,cumkernel):
+
+#@jit(nopython=True)            # unfortunately this line doesn't work anymore, not sure why
+@jit(debug=True)
+def numbakernel(rndloc,cumkernel,tempx,tempy):
     nlocs=len(rndloc)
-    nrows=cumkernel.shape[0]
     ncols=cumkernel.shape[1]
-    tempx=np.empty((len(rndloc)),dtype="int32")
-    tempy=np.empty((len(rndloc)),dtype="int32")
-    #flatkern=cumkernel.flatten()
     flatkern=np.append(0.,cumkernel.flatten())
+    #sys.exit("this won't work, need to deal with nans in cumkernel")
     
     for i in range(0,nlocs):
-        whereind=np.where(np.logical_and(rndloc[i]>flatkern[0:-1],rndloc[i]<=flatkern[1:]))[0][0]
+        #whereind=np.where(np.logical_and(rndloc[i]>flatkern[0:-1],rndloc[i]<=flatkern[1:]))[0][0]
+        x=rndloc[i]-flatkern
+        x[np.less(x,0.)]=np.nan
+        whereind = np.nanargmin(x)-1
         y=whereind/ncols
-        x=whereind-y*ncols        
+        x=whereind-y*ncols 
         tempx[i]=x
         tempy[i]=y
     return tempx,tempy
+
+
+
 
 
 #==============================================================================
@@ -599,14 +637,15 @@ def readcatalog(rfile):
     outlocy=np.array(infile.variables['ylocation'][:])
     outmax=np.array(infile.variables['basinrainfall'][:])
     outmask=np.array(infile.variables['gridmask'][:])
+    domainmask=np.array(infile.variables['domainmask'][:])
     infile.close()
-    return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outmask
+    return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outmask,domainmask
 
     
 #==============================================================================
 # WRITE RAINFALL FILE TO NETCDF
 #==============================================================================
-def writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,nstorms,gridmask,parameterfile):
+def writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,nstorms,gridmask,parameterfile,domainmask):
     # SAVE outrain AS NETCDF FILE
     dataset=Dataset(catalogname, 'w', format='NETCDF4')
     
@@ -625,6 +664,7 @@ def writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,
     xlocation=dataset.createVariable('xlocation',np.int32,('nstorms')) 
     ylocation=dataset.createVariable('ylocation',np.int32,('nstorms')) 
     gmask=dataset.createVariable('gridmask',np.float32,('outlat','outlon',)) 
+    domainmask=dataset.createVariable('domainmask',np.float32,('outlat','outlon',)) 
     
     # Global Attributes
     with open(parameterfile, "r") as myfile:
@@ -652,6 +692,7 @@ def writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,
     xlocation[:]=catx
     ylocation[:]=caty
     gmask[:]=gridmask
+    domainmask[:]=domainmask
     
     dataset.close()
 
@@ -728,7 +769,7 @@ def createfilelist(inpath,includeyears,excludemonths):
 #==============================================================================
 def rainprop_setup(infile,catalog=False):
     if catalog:
-        inrain,intime,inlatitude,inlongitude,catx,caty,catmax,_=readcatalog(infile)
+        inrain,intime,inlatitude,inlongitude,catx,caty,catmax,_,domainmask=readcatalog(infile)
     else:
         inrain,intime,inlatitude,inlongitude=readnetcdf(infile)
     
@@ -770,7 +811,7 @@ def rainprop_setup(infile,catalog=False):
         nodata=nodata[0]
 
     if catalog:
-        return [xres,yres], [len(inlatitude),len(inlongitude)],[np.min(inlongitude),np.max(inlongitude),np.min(inlatitude),np.max(inlatitude)],tempres,nodata,inrain,intime,inlatitude,inlongitude,catx,caty,catmax        
+        return [xres,yres], [len(inlatitude),len(inlongitude)],[np.min(inlongitude),np.max(inlongitude),np.min(inlatitude),np.max(inlatitude)],tempres,nodata,inrain,intime,inlatitude,inlongitude,catx,caty,catmax,domainmask       
     else:
         return [xres,yres], [len(inlatitude),len(inlongitude)],[np.min(inlongitude),np.max(inlongitude)+xres,np.min(inlatitude)-yres,np.max(inlatitude)],tempres,nodata
     

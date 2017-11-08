@@ -1,0 +1,150 @@
+Driver: GTiff/GeoTIFF
+Files: /Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDay_example/temp.GTiff
+Size is 3000, 3000
+Coordinate System is:
+GEOGCS["WGS 84",
+    DATUM["WGS_1984",
+        SPHEROID["WGS 84",6378137,298.257223563,
+            AUTHORITY["EPSG","7030"]],
+        AUTHORITY["EPSG","6326"]],
+    PRIMEM["Greenwich",0],
+    UNIT["degree",0.0174532925199433],
+    AUTHORITY["EPSG","4326"]]
+Origin = (-96.635665893554688,43.504646301269531)
+Pixel Size = (0.002165451049805,-0.001043368021647)
+Metadata:
+  AREA_OR_POINT=Area
+Image Structure Metadata:
+  INTERLEAVE=BAND
+Corner Coordinates:
+Upper Left  ( -96.6356659,  43.5046463) ( 96d38' 8.40"W, 43d30'16.73"N)
+Lower Left  ( -96.6356659,  40.3745422) ( 96d38' 8.40"W, 40d22'28.35"N)
+Upper Right ( -90.1393127,  43.5046463) ( 90d 8'21.53"W, 43d30'16.73"N)
+Lower Right ( -90.1393127,  40.3745422) ( 90d 8'21.53"W, 40d22'28.35"N)
+Center      ( -93.3874893,  41.9395943) ( 93d23'14.96"W, 41d56'22.54"N)
+Band 1 Block=3000x1 Type=Float32, ColorInterp=Gray
+Driver: GTiff/GeoTIFF
+Files: /Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDay_example/temp.GTiff
+Size is 3000, 3000
+Coordinate System is:
+GEOGCS["WGS 84",
+    DATUM["WGS_1984",
+        SPHEROID["WGS 84",6378137,298.257223563,
+            AUTHORITY["EPSG","7030"]],
+        AUTHORITY["EPSG","6326"]],
+    PRIMEM["Greenwich",0],
+    UNIT["degree",0.0174532925199433],
+    AUTHORITY["EPSG","4326"]]
+Origin = (-96.635665893554688,43.504646301269531)
+Pixel Size = (0.002165451049805,-0.001043368021647)
+Metadata:
+  AREA_OR_POINT=Area
+Image Structure Metadata:
+  INTERLEAVE=BAND
+Corner Coordinates:
+Upper Left  ( -96.6356659,  43.5046463) ( 96d38' 8.40"W, 43d30'16.73"N)
+Lower Left  ( -96.6356659,  40.3745422) ( 96d38' 8.40"W, 40d22'28.35"N)
+Upper Right ( -90.1393127,  43.5046463) ( 90d 8'21.53"W, 43d30'16.73"N)
+Lower Right ( -90.1393127,  40.3745422) ( 90d 8'21.53"W, 40d22'28.35"N)
+Center      ( -93.3874893,  41.9395943) ( 93d23'14.96"W, 41d56'22.54"N)
+Band 1 Block=3000x1 Type=Float32, ColorInterp=Gray
+Driver: GTiff/GeoTIFF
+Files: /Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDay_example/temp.GTiff
+Size is 3000, 3000
+Coordinate System is:
+GEOGCS["WGS 84",
+    DATUM["WGS_1984",
+        SPHEROID["WGS 84",6378137,298.257223563,
+            AUTHORITY["EPSG","7030"]],
+        AUTHORITY["EPSG","6326"]],
+    PRIMEM["Greenwich",0],
+    UNIT["degree",0.0174532925199433],
+    AUTHORITY["EPSG","4326"]]
+Origin = (-96.635665893554688,43.504646301269531)
+Pixel Size = (0.002165451049805,-0.001043368021647)
+Metadata:
+  AREA_OR_POINT=Area
+Image Structure Metadata:
+  INTERLEAVE=BAND
+Corner Coordinates:
+Upper Left  ( -96.6356659,  43.5046463) ( 96d38' 8.40"W, 43d30'16.73"N)
+Lower Left  ( -96.6356659,  40.3745422) ( 96d38' 8.40"W, 40d22'28.35"N)
+Upper Right ( -90.1393127,  43.5046463) ( 90d 8'21.53"W, 43d30'16.73"N)
+Lower Right ( -90.1393127,  40.3745422) ( 90d 8'21.53"W, 40d22'28.35"N)
+Center      ( -93.3874893,  41.9395943) ( 93d23'14.96"W, 41d56'22.54"N)
+Band 1 Block=3000x1 Type=Float32, ColorInterp=Gray
+Driver: GTiff/GeoTIFF
+Files: /Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDay_example/temp.GTiff
+Size is 3000, 3000
+Coordinate System is:
+GEOGCS["WGS 84",
+    DATUM["WGS_1984",
+        SPHEROID["WGS 84",6378137,298.257223563,
+            AUTHORITY["EPSG","7030"]],
+        AUTHORITY["EPSG","6326"]],
+    PRIMEM["Greenwich",0],
+    UNIT["degree",0.0174532925199433],
+    AUTHORITY["EPSG","4326"]]
+Origin = (-96.635665893554688,43.504646301269531)
+Pixel Size = (0.002165451049805,-0.001043368021647)
+Metadata:
+  AREA_OR_POINT=Area
+Image Structure Metadata:
+  INTERLEAVE=BAND
+Corner Coordinates:
+Upper Left  ( -96.6356659,  43.5046463) ( 96d38' 8.40"W, 43d30'16.73"N)
+Lower Left  ( -96.6356659,  40.3745422) ( 96d38' 8.40"W, 40d22'28.35"N)
+Upper Right ( -90.1393127,  43.5046463) ( 90d 8'21.53"W, 43d30'16.73"N)
+Lower Right ( -90.1393127,  40.3745422) ( 90d 8'21.53"W, 40d22'28.35"N)
+Center      ( -93.3874893,  41.9395943) ( 93d23'14.96"W, 41d56'22.54"N)
+Band 1 Block=3000x1 Type=Float32, ColorInterp=Gray
+Driver: GTiff/GeoTIFF
+Files: /Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDay_example/temp.GTiff
+Size is 3000, 3000
+Coordinate System is:
+GEOGCS["WGS 84",
+    DATUM["WGS_1984",
+        SPHEROID["WGS 84",6378137,298.257223563,
+            AUTHORITY["EPSG","7030"]],
+        AUTHORITY["EPSG","6326"]],
+    PRIMEM["Greenwich",0],
+    UNIT["degree",0.0174532925199433],
+    AUTHORITY["EPSG","4326"]]
+Origin = (-96.635665893554688,43.504646301269531)
+Pixel Size = (0.002165451049805,-0.001043368021647)
+Metadata:
+  AREA_OR_POINT=Area
+Image Structure Metadata:
+  INTERLEAVE=BAND
+Corner Coordinates:
+Upper Left  ( -96.6356659,  43.5046463) ( 96d38' 8.40"W, 43d30'16.73"N)
+Lower Left  ( -96.6356659,  40.3745422) ( 96d38' 8.40"W, 40d22'28.35"N)
+Upper Right ( -90.1393127,  43.5046463) ( 90d 8'21.53"W, 43d30'16.73"N)
+Lower Right ( -90.1393127,  40.3745422) ( 90d 8'21.53"W, 40d22'28.35"N)
+Center      ( -93.3874893,  41.9395943) ( 93d23'14.96"W, 41d56'22.54"N)
+Band 1 Block=3000x1 Type=Float32, ColorInterp=Gray
+Driver: GTiff/GeoTIFF
+Files: /Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDay_example/temp.GTiff
+Size is 3000, 3000
+Coordinate System is:
+GEOGCS["WGS 84",
+    DATUM["WGS_1984",
+        SPHEROID["WGS 84",6378137,298.257223563,
+            AUTHORITY["EPSG","7030"]],
+        AUTHORITY["EPSG","6326"]],
+    PRIMEM["Greenwich",0],
+    UNIT["degree",0.0174532925199433],
+    AUTHORITY["EPSG","4326"]]
+Origin = (-96.635665893554688,43.504646301269531)
+Pixel Size = (0.002165451049805,-0.001043368021647)
+Metadata:
+  AREA_OR_POINT=Area
+Image Structure Metadata:
+  INTERLEAVE=BAND
+Corner Coordinates:
+Upper Left  ( -96.6356659,  43.5046463) ( 96d38' 8.40"W, 43d30'16.73"N)
+Lower Left  ( -96.6356659,  40.3745422) ( 96d38' 8.40"W, 40d22'28.35"N)
+Upper Right ( -90.1393127,  43.5046463) ( 90d 8'21.53"W, 43d30'16.73"N)
+Lower Right ( -90.1393127,  40.3745422) ( 90d 8'21.53"W, 40d22'28.35"N)
+Center      ( -93.3874893,  41.9395943) ( 93d23'14.96"W, 41d56'22.54"N)
+Band 1 Block=3000x1 Type=Float32, ColorInterp=Gray
