@@ -142,11 +142,11 @@ fields with Stochastic Storm Transposition for assessment of rainfall-driven haz
 start = time.time()
 parameterfile='ttt'
 
-#parameterfile=np.str(sys.argv[1])
+parameterfile=np.str(sys.argv[1])
 #parameterfile='/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDayExample.sst'
 #parameterfile='/Users/daniel/Google_Drive/RainyDay2/IrregularDomainTesting/FL_testing.sst'
 #   parameterfile='/Users/daniel/Google_Drive/PapersandReports/MyPapers/FloodStructure/Analyses/StageIV_Turkey72hour.sst'
-parameterfile='/Users/daniel/Google_Drive/RainyDay2/IrregularDomainTesting/defaulttesting.txt'
+#parameterfile='/Users/daniel/Google_Drive/RainyDay2/IrregularDomainTesting/defaulttesting.txt'
 
 if os.path.isfile(parameterfile)==False:
     sys.exit("You either didn't specify a parameter file, or it doesn't exist.")
@@ -659,6 +659,7 @@ if int(spversion[0])<1:
   
 # should add a "cell-centering" option!
 
+
         
 #==============================================================================
 # THIS BLOCK CONFIGURES SEVERAL THINGS
@@ -745,7 +746,7 @@ if areatype.lower()=="basin":
     if os.path.isfile(wsmaskshp)==False:
         sys.exit("can't find the basin shapefile!")
     else:
-        catmask=RainyDay.rastermaskGDAL(wsmaskshp,shpproj,rainprop,'fraction',fullpath)
+        catmask=RainyDay.rastermaskGDAL(wsmaskshp,GEOG,rainprop,'fraction',fullpath)
         catmask=catmask.reshape(ingridx.shape,order='F')
 
 elif areatype.lower()=="point":
@@ -794,7 +795,7 @@ else:
     
  
 if domain_type.lower()=='irregular':
-    domainmask=RainyDay.rastermaskGDAL(domainshp,domainproj,rainprop,'simple',fullpath).astype('float32')
+    domainmask=RainyDay.rastermaskGDAL(domainshp,GEOG,rainprop,'simple',fullpath).astype('float32')
     #domainmask=catmask.reshape(ingridx.shape,order='F')
 else:
     domainmask=np.ones((catmask.shape),dtype='float32')    
