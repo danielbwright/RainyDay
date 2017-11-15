@@ -122,7 +122,7 @@ def catalogAlt_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rains
         y=i/xlen
         x=i-y*xlen
         #print x,y
-        if np.any(np.equal(domainmask[y+maskheight/2,:],1.)) and np.any(np.equal(domainmask[:,x+maskwidth/2],1.)):
+        if np.any(np.equal(domainmask[y+maskheight/2,x:x+maskwidth],1.)) and np.any(np.equal(domainmask[y:y+maskheight,x+maskwidth/2],1.)):
             rainsum[y,x]=np.nansum(np.multiply(temparray[(y):(y+maskheight),(x):(x+maskwidth)],trimmask))
         else:
             rainsum[y,x]=0.
@@ -139,7 +139,7 @@ def catalogNumba_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rai
         y=i/xlen
         x=i-y*xlen
         #print x,y
-        if np.any(np.equal(domainmask[y+maskheight/2,:],1.)) and np.any(np.equal(domainmask[:,x+maskwidth/2],1.)):
+        if np.any(np.equal(domainmask[y+maskheight/2,x:x+maskwidth],1.)) and np.any(np.equal(domainmask[y:y+maskheight,x+maskwidth/2],1.)):
             rainsum[y,x]=np.nansum(np.multiply(temparray[(y):(y+maskheight),(x):(x+maskwidth)],trimmask))
         else:
             rainsum[y,x]=0.
@@ -361,7 +361,7 @@ def pykernel(rndloc,cumkernel):
     for i in range(0,nlocs):
         x=rndloc[i]-flatkern
         x[np.less(x,0.)]=np.nan
-        whereind = np.nanargmin(x)-1
+        whereind = np.nanargmin(x)
         y=whereind/ncols
         x=whereind-y*ncols        
         tempx[i]=x
@@ -381,7 +381,7 @@ def numbakernel(rndloc,cumkernel,tempx,tempy):
         #whereind=np.where(np.logical_and(rndloc[i]>flatkern[0:-1],rndloc[i]<=flatkern[1:]))[0][0]
         x=rndloc[i]-flatkern
         x[np.less(x,0.)]=np.nan
-        whereind = np.nanargmin(x)-1
+        whereind = np.nanargmin(x)
         y=whereind/ncols
         x=whereind-y*ncols 
         tempx[i]=x
@@ -514,7 +514,7 @@ def writerealization(rlz,nrealizations,writename,outrain,writemax,writestorm,wri
     times=dataset.createVariable('time',np.float64, ('nyears','time'))
     latitudes=dataset.createVariable('latitude',np.float32, ('outlat'))
     longitudes=dataset.createVariable('longitude',np.float32, ('outlon'))
-    rainrate=dataset.createVariable('rainrate',np.float32,('nyears','time','outlat','outlon'),zlib=True,complevel=4) 
+    rainrate=dataset.createVariable('rainrate',np.float32,('nyears','time','outlat','outlon'),zlib=True,complevel=4,least_significant_digit=2) 
     basinrainfall=dataset.createVariable('basinrainfall',np.float32,('nyears')) 
     xlocation=dataset.createVariable('xlocation',np.int32,('nyears')) 
     ylocation=dataset.createVariable('ylocation',np.int32,('nyears')) 
@@ -571,7 +571,7 @@ def writemaximized(writename,outrain,writemax,write_ts,writex,writey,writetimes,
     times=dataset.createVariable('time',np.float64, ('time'))
     latitudes=dataset.createVariable('latitude',np.float32, ('outlat'))
     longitudes=dataset.createVariable('longitude',np.float32, ('outlon'))
-    rainrate=dataset.createVariable('rainrate',np.float32,('time','outlat','outlon'),zlib=True,complevel=4) 
+    rainrate=dataset.createVariable('rainrate',np.float32,('time','outlat','outlon'),zlib=True,complevel=4,least_significant_digit=2) 
     basinrainfall=dataset.createVariable('basinrainfall',np.float32) 
     xlocation=dataset.createVariable('xlocation',np.int32) 
     ylocation=dataset.createVariable('ylocation',np.int32) 
@@ -659,7 +659,7 @@ def writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,
     times=dataset.createVariable('time',np.float64, ('nstorms','time',))
     latitudes=dataset.createVariable('latitude',np.float32, ('outlat',))
     longitudes=dataset.createVariable('longitude',np.float32, ('outlon',))
-    rainrate=dataset.createVariable('rainrate',np.float32,('nstorms','time','outlat','outlon',),zlib=True,complevel=4) 
+    rainrate=dataset.createVariable('rainrate',np.float32,('nstorms','time','outlat','outlon',),zlib=True,complevel=4,least_significant_digit=2) 
     basinrainfall=dataset.createVariable('basinrainfall',np.float32,('nstorms')) 
     xlocation=dataset.createVariable('xlocation',np.int32,('nstorms')) 
     ylocation=dataset.createVariable('ylocation',np.int32,('nstorms')) 

@@ -143,9 +143,6 @@ start = time.time()
 parameterfile='ttt'
 
 parameterfile=np.str(sys.argv[1])
-#parameterfile='/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/RainyDayExample.sst'
-#parameterfile='/Users/daniel/Google_Drive/RainyDay2/IrregularDomainTesting/FL_testing.sst'
-#   parameterfile='/Users/daniel/Google_Drive/PapersandReports/MyPapers/FloodStructure/Analyses/StageIV_Turkey72hour.sst'
 #parameterfile='/Users/daniel/Google_Drive/RainyDay2/IrregularDomainTesting/defaulttesting.txt'
 
 if os.path.isfile(parameterfile)==False:
@@ -242,10 +239,7 @@ try:
 except Exception:
     nrealizations=1
 
-try:
-    timeseparation=np.int(cardinfo[cardinfo[:,0]=="TIMESEPARATION",1][0])
-except Exception:
-    timeseparation=np.int(0)
+
 
 try:
     duration=np.int(cardinfo[cardinfo[:,0]=="DURATION",1][0])
@@ -254,8 +248,15 @@ try:
 except IndexError:
     sys.exit("You didn't specify 'DURATION', which is a required field!")
         
-if timeseparation<0:
-    timeseparation=0
+try:
+    timeseparation=np.int(cardinfo[cardinfo[:,0]=="TIMESEPARATION",1][0])
+    if timeseparation<0:
+        timeseparation=duration
+    else:
+        timeseparation=timeseparation+duration
+except Exception:
+    timeseparation=duration
+
 
 try:
     samplingtype=cardinfo[cardinfo[:,0]=="RESAMPLING",1][0]
@@ -352,33 +353,6 @@ if domain_type.lower()=='irregular':
         layer = ds.GetLayer()
         inarea=np.array(layer.GetExtent(),dtype='float32')
         
-#        os.system('gdal_rasterize -a AREA -ts 3000 3000 -l Iowa_shapefile -ot Float32 '+domainshp+' '+fullpath+'/temp.GTiff')
-#        os.system('gdalinfo '+fullpath+'/temp.GTiff >> '+fullpath+'/tempinfo.txt')
-#        finfo=open(fullpath+'/tempinfo.txt')
-#        domaininfo=finfo.readlines()
-#        if domaininfo[11]!='    AUTHORITY["EPSG","4326"]]\n':
-#            sys.exit('There is something wrong with the projection of the transposition domain input')     
-#        if domaininfo[19].split('Upper Left  ( ')==domaininfo[19]:
-#            sys.exit('There is something wrong with the parsing of the transposition domain info')
-#        else:
-#            inarea=np.empty((4),dtype='float32')
-#            minx1=np.float32(domaininfo[19].split('Upper Left  ( ')[1].split(',')[0])
-#            minx2=np.float32(domaininfo[20].split('Lower Left  ( ')[1].split(',')[0])
-#            inarea[0]=np.min(np.array([minx1,minx2]))
-#            
-#            maxx1=np.float32(domaininfo[21].split('Upper Right ( ')[1].split(',')[0])
-#            maxx2=np.float32(domaininfo[22].split('Lower Right ( ')[1].split(',')[0])
-#            inarea[1]=np.min(np.array([maxx1,maxx2]))
-#            
-#            maxy1=np.float32(domaininfo[19].split('Upper Left  ( ')[1].split(',')[1].split(')')[0])
-#            maxy2=np.float32(domaininfo[21].split('Upper Right ( ')[1].split(',')[1].split(')')[0])
-#            inarea[3]=np.min(np.array([maxy1,maxy2]))
-#            
-#            miny1=np.float32(domaininfo[20].split('Lower Left  ( ')[1].split(',')[1].split(')')[0])
-#            miny2=np.float32(domaininfo[22].split('Lower Right ( ')[1].split(',')[1].split(')')[0])
-#            inarea[2]=np.min(np.array([miny1,miny2]))
-#            #domainmask=RainyDay.rastermaskGDAL(domainshp,shpproj,rainprop,'fraction',fullpath)
-#            #domainmask=catmask.reshape(ingridx.shape,order='F')
 else:  
     print "rectangular domain type selected!"
     domain_type='rectangular'   
@@ -659,6 +633,20 @@ if int(spversion[0])<1:
   
 # should add a "cell-centering" option!
 
+# read in the start and end hour stuff-for doing IDFs for specific times of day:
+try:
+    starthour=np.int(cardinfo[cardinfo[:,0]=="STARTHOUR",1][0])
+except:
+    starthour=0
+
+try: 
+    endhour=np.int(cardinfo[cardinfo[:,0]=="ENDHOUR",1][0])
+except:
+    endhour=24
+
+if starthour!=0 and endhour!=24:
+    if (endhour-starthour)<duration:
+        duration=endhour-starthour 
 
         
 #==============================================================================
@@ -736,7 +724,38 @@ else:
 
     ingridx,ingridy=np.meshgrid(np.arange(rainprop.subextent[0],rainprop.subextent[1]-rainprop.spatialres[0]/1000,rainprop.spatialres[0]),np.arange(rainprop.subextent[3],rainprop.subextent[2]+rainprop.spatialres[1]/1000,-rainprop.spatialres[1]))        
 
-         
+
+
+#============================================================================
+# SDo the setup to run for specific times of day!
+#=============================================================================
+
+if CreateCatalog==False:
+    flist=RainyDay.createfilelist(inpath,includeyears,excludemonths)
+
+if starthour==0 and endhour==24:
+    hourinclude=np.ones((24*60/rainprop.timeres),dtype='int32')
+else:
+    try:
+        _,temptime,_,_=RainyDay.readnetcdf(flist[0],inbounds=rainprop.subind)
+    except Exception:
+        sys.exit("Can't find the input files necessary for setup to calculate time-of-day-specific IDF curves")
+
+    starthour=starthour+np.float(rainprop.timeres/60)   # because the netcdf file timestamps correspond to the end of the accumulation period
+    hourinclude=np.zeros((24*60/rainprop.timeres),dtype='int32')
+    temphour=np.zeros((24*60/rainprop.timeres),dtype='float32')
+    #temptime=temptime-np.timedelta64(rainprop.timeres,'m')
+    for i in range(0,len(temptime)):
+        temphour[i]=temptime[i].astype(object).hour
+    
+    hourinclude[np.logical_and(np.greater_equal(temphour,starthour),np.less_equal(temphour,endhour))]=1
+
+hourinclude=hourinclude.astype('bool')
+if len(hourinclude)!=len(temptime):
+    sys.exit("Something is wrong in the hour exclusion calculation!")
+#temptime[hourinclude] # checked, seems to be working right
+ 
+        
 #==============================================================================
 # SET UP GRID MASK
 #==============================================================================
@@ -869,15 +888,20 @@ if CreateCatalog:
     # READ IN RAINFALL
     #==============================================================================
     filerange=range(0,len(flist))
+    #filerange=range(0,18)
     start = time.time()
     for i in filerange: 
         infile=flist[i]
         inrain,intime,inlatitude,inlongitude=RainyDay.readnetcdf(infile,inbounds=rainprop.subind)
+        inrain=inrain[hourinclude,:]
+        intime=intime[hourinclude]
+        
         inrain[inrain<0.]=np.nan
         print 'Processing file '+str(i+1)+' out of '+str(len(flist))+'('+str(100*(i+1)/len(flist))+'%): '+infile
 
         # THIS FIRST PART BUILDS THE STORM CATALOG
-        for k in np.arange(0,24*60/rainprop.timeres,1):     
+        for k in np.arange(0,len(intime),1):     
+        #for k in np.arange(0,24*60/rainprop.timeres,1):     
             starttime=intime[k]-np.timedelta64(tempdur,'h')
             raintime[-1]=intime[k]
             #rainarray[-1,:]=np.reshape(inrain[k,subgrid],(rainprop.subdimensions[0],rainprop.subdimensions[1]))
@@ -896,7 +920,7 @@ if CreateCatalog:
                 if domain_type=='irregular':
                     rainmax,ycat,xcat=RainyDay.catalogAlt_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask)
                 else:
-                    rainmax,ycat,xcat=RainyDay.catalogAlt(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)
+                    rainmax,ycat,xcat=RainyDay.catalogAlt(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask)
                                                                 
 
             tempmin=np.min(catmax)
@@ -932,7 +956,6 @@ if CreateCatalog:
     
     # WRITE CATALOG
     print "writing storm catalog..."
-    print "need to write the domain mask to the catalog, and also add reading the domain mask back in!"
     RainyDay.writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,nstorms,catmask,parameterfile,domainmask)   
 
 
@@ -941,7 +964,8 @@ if CreateCatalog:
 #################################################################################
 print "trimming storm catalog..."
 
-origstormsno=np.arange(0,nstorms)
+#origstormsno=np.arange(0,nstorms)
+origstormsno=np.arange(0,len(catmax))
 
 if CreateCatalog==False:
     if duration>catrain.shape[1]*rainprop.timeres/60.:
@@ -1078,16 +1102,25 @@ if userdistr.all()!=False:
 #==============================================================================
 print "calculating kernel density smoother..."
 
+
 kx,ky=np.meshgrid(np.arange(0,rainprop.subdimensions[1]-maskwidth+1),np.arange(0,rainprop.subdimensions[0]-maskheight+1))
 
 kpositions=np.vstack([ky.ravel(),kx.ravel()])
 
+if domain_type!='irregular':
+    # this "checkind" line seems to cause some unrealistic issues with irregular domains, which makes sense
+    checkind=np.where(np.logical_and(np.logical_and(caty!=0,catx!=0),np.logical_and(caty!=ylen-1,catx!=xlen-1)))
+    invalues=np.vstack([caty[checkind], catx[checkind]])
+else:
+    invalues=np.vstack([caty, catx])
+    
+def my_kde_bandwidth(obj, fac=1.):
+    """We use Scott's Rule, multiplied by a constant factor."""
+    return np.power(obj.n, -1./(obj.d+4)) * fac
 
-checkind=np.where(np.logical_and(np.logical_and(caty!=0,catx!=0),np.logical_and(caty!=ylen-1,catx!=xlen-1)))
-
-invalues=np.vstack([caty[checkind], catx[checkind]])
-stmkernel=stats.gaussian_kde(invalues)
+stmkernel=stats.gaussian_kde(invalues,bw_method=my_kde_bandwidth)
 pltkernel=np.multiply(np.reshape(stmkernel(kpositions), kx.shape),domainmask[0:rainprop.subdimensions[0]-maskheight+1,0:rainprop.subdimensions[1]-maskwidth+1])
+#pltkernel=np.multiply(np.reshape(stmkernel(kpositions), kx.shape),domainmask[0:rainprop.subdimensions[0]-maskheight+1,0:rainprop.subdimensions[1]-maskwidth+1])
 pltkernel=pltkernel/np.nansum(pltkernel)
 
 tempmask=deepcopy(domainmask[0:rainprop.subdimensions[0]-maskheight+1,0:rainprop.subdimensions[1]-maskwidth+1])
@@ -1103,6 +1136,8 @@ elif transpotype=='kernel':
     cumkernel=np.array(np.reshape(np.cumsum(pltkernel),(kx.shape)),dtype=np.float64)
     tempmask[np.equal(tempmask,0.)]=100.
     cumkernel[np.equal(tempmask,100.)]=100.
+    
+
 
 
 #==============================================================================
@@ -1140,6 +1175,7 @@ if DoDiagnostics:
     # this is for a very specific situation....
     if np.any(np.isnan(catmax)):
         catmax[:]=100.
+        
 
     if areatype.lower()=="box":
         from matplotlib.patches import Polygon
@@ -1162,47 +1198,63 @@ if DoDiagnostics:
         figsizey=5   
         figsizex=5
        
+    fig = plt.figure(1)
+    ax  = fig.add_subplot(111)
+    fig.set_size_inches(figsizex,figsizey)
     bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')    
-    outerextent=np.array(rainprop.subextent,dtype='float32')   
+    bmap.drawcoastlines(linewidth=1.25)
+    bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
+    bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
+    #f1=plt.imshow(catrain[0,0,:], interpolation='none',extent=outerextent,cmap='Blues',vmin=0,vmax=np.nanmax(catmax))
+    outerextent=np.array(rainprop.subextent,dtype='float32')  
+    
+    if BaseMap.lower()!='none':
+        bmap.readshapefile(BaseMap,BaseField,color="grey")
+    if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
+        try:            
+            wmap.readshapefile(wsmaskshp.split('.')[0],str(0),color="black")
+        except ValueError:
+            if i==0:
+                print "problem plotting the watershed map; skipping..."
+    elif areatype.lower()=="box":
+        plot_rectangle(bmap,boxarea[0],boxarea[1],boxarea[2],boxarea[3])
+    elif areatype.lower()=="point":
+        plt.scatter(ptlon,ptlat,color="b")
+
+    if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
+        wmap=Basemap(llcrnrlon=outerextent[0],llcrnrlat=outerextent[2],urcrnrlon=outerextent[1],urcrnrlat=outerextent[3],projection='cyl')
+
+    os.system('rm '+diagpath+'Storm*.png')
     for i in range(0,nstorms):    
         temprain=np.nansum(catrain[i,:],axis=0)*rainprop.timeres/60.
         if userdistr.all()==False:     
             temprain[temprain<0.05*catmax[i]]=np.nan
-        fig = plt.figure()
-        fig.set_size_inches(figsizex,figsizey)
-        f1=plt.imshow(temprain, interpolation='none',extent=outerextent,cmap='Blues')
-        plt.title('Storm '+str(i+1)+': '+str(cattime[i,-1])+'\nMax Rainfall:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}')
-        #bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')
-        bmap.drawcoastlines(linewidth=1.25)
-        bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
-        bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
-        if BaseMap.lower()!='none':
-            bmap.readshapefile(BaseMap,BaseField,color="grey")
-        if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-            wmap=Basemap(llcrnrlon=outerextent[0],llcrnrlat=outerextent[2],urcrnrlon=outerextent[1],urcrnrlat=outerextent[3],projection='cyl')
-            try:            
-                wmap.readshapefile(wsmaskshp.split('.')[0],str(0),color="black")
-            except ValueError:
-                if i==0:
-                    print "problem plotting the watershed map; skipping..."
-        elif areatype.lower()=="box":
-            plot_rectangle(bmap,boxarea[0],boxarea[1],boxarea[2],boxarea[3])
-        elif areatype.lower()=="point":
-            plt.scatter(ptlon,ptlat,color="b")
+
+        #f1=plt.imshow(temprain, interpolation='none',extent=outerextent,cmap='Blues')
+        ims=bmap.imshow(np.flipud(temprain), interpolation='none',extent=outerextent,cmap='Blues',vmin=0,vmax=np.nanmax(catmax))
         if rainprop.subdimensions[1]>rainprop.subdimensions[0]:
-            cb=plt.colorbar(f1,orientation='horizontal')
+            cb=fig.colorbar(ims,orientation='horizontal',pad=0.05,shrink=.8)
         else:
-            cb=plt.colorbar(f1)
+            cb=plt.colorbar()
         cb.set_label('Total Rainfall [mm]')
-        plt.scatter(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=10,facecolors='none',edgecolors='r',alpha=0.5)
-        plt.savefig(diagpath+'Storm'+str(i+1)+'_'+str(cattime[i,-1]).split('T')[0]+'.png',dpi=250)
-        plt.close()       
- 
+        #f1.set_data(temprain)
+        sct=bmap.scatter(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=10,facecolors='none',edgecolors='r',alpha=0.5)
+        
+        
+        ttl=plt.title('Storm '+str(i+1)+': '+str(cattime[i,-1])+'\nMax Rainfall:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}')
+        plt.savefig(diagpath+'Storm'+str(i+1)+'_'+str(cattime[i,-1]).split('T')[0]+'.png',dpi=250) 
+        cb.remove()
+        ims.remove()
+        sct.remove()
+    plt.close()  
+
          
     # PLOT STORM OCCURRENCE PROBABILITIES
+    probextent=[rainprop.subextent[0],rainprop.subextent[1]-maskwidth*rainprop.spatialres[0],rainprop.subextent[2]+maskheight*rainprop.spatialres[1],rainprop.subextent[3]]
+    
     fig = plt.figure()
     fig.set_size_inches(figsizex,figsizey)
-    f1=plt.imshow(pltkernel,interpolation="none",extent=rainprop.subextent,cmap='Reds')
+    f1=plt.imshow(pltkernel,interpolation="none",extent=probextent,cmap='Reds')
     plt.title("Probability of storm occurrence")
     #bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')
     bmap.drawcoastlines(linewidth=1.25)
@@ -1211,7 +1263,6 @@ if DoDiagnostics:
     if BaseMap.lower()!='none':
         bmap.readshapefile(BaseMap,BaseField,color="grey")
     if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-        wmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl')
         try:        
             wmap.readshapefile(wsmaskshp.split('.')[0],str(0),color="black")
         except ValueError:
@@ -1229,8 +1280,8 @@ if DoDiagnostics:
         cb=plt.colorbar(f1,orientation='horizontal')
     else:
         cb=plt.colorbar(f1)
-    
-    plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
+    plt.text(probextent[0],probextent[2],"*Probability map may not extend to the edge of the map.\nThat isn't a mistake",size=6)
+    plt.scatter(lonrange[catx],latrange[caty],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
     plt.savefig(diagpath+'KernelDensity.png',dpi=250)
     #plt.savefig(diagpath+'KernelDensity.pdf')
     plt.close('all')
@@ -1248,7 +1299,6 @@ if DoDiagnostics:
     if BaseMap.lower()!='none':
         bmap.readshapefile(BaseMap,BaseField,color="grey")
     if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-        wmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl')
         try:
             wmap.readshapefile(wsmaskshp.split('.')[0],str(0),color="black")
         except ValueError:
@@ -1269,66 +1319,67 @@ if DoDiagnostics:
         
          
 if DoDiagMovies:
-    "preparing diagnostic movies..."
-    
-    if rainprop.subdimensions[0]>rainprop.subdimensions[1]:
-        figsizex=5
-        figsizey=5+0.25*5*np.float(rainprop.subdimensions[0])/rainprop.subdimensions[1]
-    elif rainprop.subdimensions[0]<rainprop.subdimensions[1]: 
-        figsizey=5
-        figsizex=5+0.25*5*np.float(rainprop.subdimensions[0])/rainprop.subdimensions[1]
-    else:
-        figsizey=5   
-        figsizex=5
-        
-    outerextent=np.array([rainprop.subextent[0],rainprop.subextent[1],rainprop.subextent[2],rainprop.subextent[3]],dtype='float32')      
-
-    def init():
-        f1.set_array(temprain[0,:])
-        titl=plt.title(tstr+'\n'+str(temptime[0]))
-        return [f1,titl]
-
-    def animate(i):
-        f1.set_array(temprain[i,:])
-        titl=plt.title(tstr+'\n'+str(temptime[i]))
-        return [f1,titl]
-
-    for i in range(0,nstorms):
-        temprain=catrain[i,:]
-        #temprain[temprain<0.5]=np.nan
-        temptime=cattime[i,:]
-        fig = plt.figure()
-        fig.set_size_inches(figsizex,figsizey)
-        tstr='Storm '+str(i+1)
-        titl=plt.title(tstr+'\n'+str(temptime[0,]))
-        #pylab.hold(True)
-        f1=plt.imshow(temprain[0,:],extent=rainprop.subextent,interpolation="none",cmap='Blues',norm=LogNorm(vmin=0.1, vmax=np.nanmax(temprain)))
-        #bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')
-        bmap.drawcoastlines(linewidth=1.25)
-        bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
-        bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
-
-        if BaseMap.lower()!='none':
-            bmap.readshapefile(BaseMap,BaseField,color="grey")
-        if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-            wmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl')
-            try:
-                if i==0:
-                    wmap.readshapefile(wsmaskshp.split('.')[0],str(0),color="black")
-            except ValueError:
-                print "problem plotting the watershed map; skipping..."
-        elif areatype.lower()=="box":
-            plot_rectangle(bmap,boxarea[0],boxarea[1],boxarea[2],boxarea[3])
-        elif areatype.lower()=="point":
-            plt.scatter(ptlon,ptlat,color="b")
-        if rainprop.subdimensions[1]>rainprop.subdimensions[0]:
-            cb=plt.colorbar(f1,orientation='horizontal')
-        else:
-            cb=plt.colorbar(f1)
-        cb.set_label('Rain Rate (mm/hr)')
-        anim=manimation.FuncAnimation(fig,animate,init_func=init,frames=temprain.shape[0],interval=25,blit=True)
-        anim.save(diagpath+'StormMovie_'+str(i+1)+'_'+str(cattime[i,-1]).split('T')[0]+'.mp4',fps=3,dpi=250)   # animation seems buggy, I can only create movies for odd frames-per-second rates       
-        plt.close()  
+    print "this needs to be updated, currently not active"
+#    
+#    "preparing diagnostic movies..."
+#    
+#    if rainprop.subdimensions[0]>rainprop.subdimensions[1]:
+#        figsizex=5
+#        figsizey=5+0.25*5*np.float(rainprop.subdimensions[0])/rainprop.subdimensions[1]
+#    elif rainprop.subdimensions[0]<rainprop.subdimensions[1]: 
+#        figsizey=5
+#        figsizex=5+0.25*5*np.float(rainprop.subdimensions[0])/rainprop.subdimensions[1]
+#    else:
+#        figsizey=5   
+#        figsizex=5
+#        
+#    outerextent=np.array([rainprop.subextent[0],rainprop.subextent[1],rainprop.subextent[2],rainprop.subextent[3]],dtype='float32')      
+#
+#    def init():
+#        f1.set_array(temprain[0,:])
+#        titl=plt.title(tstr+'\n'+str(temptime[0]))
+#        return [f1,titl]
+#
+#    def animate(i):
+#        f1.set_array(temprain[i,:])
+#        titl=plt.title(tstr+'\n'+str(temptime[i]))
+#        return [f1,titl]
+#
+#    for i in range(0,nstorms):
+#        temprain=catrain[i,:]
+#        #temprain[temprain<0.5]=np.nan
+#        temptime=cattime[i,:]
+#        fig = plt.figure()
+#        fig.set_size_inches(figsizex,figsizey)
+#        tstr='Storm '+str(i+1)
+#        titl=plt.title(tstr+'\n'+str(temptime[0,]))
+#        #pylab.hold(True)
+#        f1=plt.imshow(temprain[0,:],extent=rainprop.subextent,interpolation="none",cmap='Blues',norm=LogNorm(vmin=0.1, vmax=np.nanmax(temprain)))
+#        #bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')
+#        bmap.drawcoastlines(linewidth=1.25)
+#        bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
+#        bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
+#
+#        if BaseMap.lower()!='none':
+#            bmap.readshapefile(BaseMap,BaseField,color="grey")
+#        if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
+#            try:
+#                if i==0:
+#                    wmap.readshapefile(wsmaskshp.split('.')[0],str(0),color="black")
+#            except ValueError:
+#                print "problem plotting the watershed map; skipping..."
+#        elif areatype.lower()=="box":
+#            plot_rectangle(bmap,boxarea[0],boxarea[1],boxarea[2],boxarea[3])
+#        elif areatype.lower()=="point":
+#            plt.scatter(ptlon,ptlat,color="b")
+#        if rainprop.subdimensions[1]>rainprop.subdimensions[0]:
+#            cb=plt.colorbar(f1,orientation='horizontal')
+#        else:
+#            cb=plt.colorbar(f1)
+#        cb.set_label('Rain Rate (mm/hr)')
+#        anim=manimation.FuncAnimation(fig,animate,init_func=init,frames=temprain.shape[0],interval=25,blit=True)
+#        anim.save(diagpath+'StormMovie_'+str(i+1)+'_'+str(cattime[i,-1]).split('T')[0]+'.mp4',fps=3,dpi=250)   # animation seems buggy, I can only create movies for odd frames-per-second rates       
+#        plt.close()  
 
 
      # this is for a very specific situation....
@@ -1442,8 +1493,8 @@ for i in range(0,nstorms):
             binctr=binctr+1
     else:
         whichrain[whichstorms==i]=RainyDay.SSTalt(passrain,whichx[whichstorms==i],whichy[whichstorms==i],trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth)*rainprop.timeres/60./mnorm
+   
     
-
 
 # HERE ARE THE ANNUAL MAXIMA!!!
 maxrain=np.nanmax(whichrain,axis=0)
