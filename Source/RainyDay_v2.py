@@ -142,8 +142,8 @@ fields with Stochastic Storm Transposition for assessment of rainfall-driven haz
 start = time.time()
 parameterfile='ttt'
 
-parameterfile=np.str(sys.argv[1])
-#parameterfile='/Users/daniel/Google_Drive/RainyDay2/IrregularDomainTesting/defaulttesting.txt'
+#parameterfile=np.str(sys.argv[1])
+parameterfile='/Users/daniel/Google_Drive/RainyDay2/IrregularDomainTesting/defaulttesting.txt'
 
 if os.path.isfile(parameterfile)==False:
     sys.exit("You either didn't specify a parameter file, or it doesn't exist.")
@@ -1226,8 +1226,11 @@ if DoDiagnostics:
     elif areatype.lower()=="point":
         plt.scatter(ptlon,ptlat,color="b")
 
-
-    os.system('rm '+diagpath+'Storm*.png')
+    try:
+        os.system('rm '+diagpath+'Storm*.png')
+    except Exception:
+        pass
+            
     for i in range(0,nstorms):    
         temprain=np.nansum(catrain[i,:],axis=0)*rainprop.timeres/60.
         if userdistr.all()==False:     
@@ -1253,7 +1256,7 @@ if DoDiagnostics:
 
          
     # PLOT STORM OCCURRENCE PROBABILITIES
-    probextent=[rainprop.subextent[0],rainprop.subextent[1]-maskwidth*rainprop.spatialres[0],rainprop.subextent[2]+maskheight*rainprop.spatialres[1],rainprop.subextent[3]]
+    probextent=[rainprop.subextent[0]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],rainprop.subextent[1]-maskwidth*rainprop.spatialres[0]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],rainprop.subextent[2]+maskheight*rainprop.spatialres[1]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],rainprop.subextent[3]-(maskheight/2+maskheight%2)*rainprop.spatialres[1]]
     
     fig = plt.figure()
     fig.set_size_inches(figsizex,figsizey)
@@ -1283,8 +1286,8 @@ if DoDiagnostics:
         cb=plt.colorbar(f1,orientation='horizontal')
     else:
         cb=plt.colorbar(f1)
-    plt.text(probextent[0],probextent[2],"*Probability map may not extend to the edge of the map.\nThat isn't a mistake",size=6)
-    plt.scatter(lonrange[catx],latrange[caty],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
+    plt.text(probextent[0],probextent[3]-(maskheight/2)*rainprop.spatialres[0],"*Probability map may not extend to the edge of map.\nThat isn't a mistake!",size=6)
+    plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
     plt.savefig(diagpath+'KernelDensity.png',dpi=250)
     #plt.savefig(diagpath+'KernelDensity.pdf')
     plt.close('all')
