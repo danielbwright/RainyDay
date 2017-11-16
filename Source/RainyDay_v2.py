@@ -1209,6 +1209,10 @@ if DoDiagnostics:
     #f1=plt.imshow(catrain[0,0,:], interpolation='none',extent=outerextent,cmap='Blues',vmin=0,vmax=np.nanmax(catmax))
     outerextent=np.array(rainprop.subextent,dtype='float32')  
     
+    if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
+        wmap=Basemap(llcrnrlon=outerextent[0],llcrnrlat=outerextent[2],urcrnrlon=outerextent[1],urcrnrlat=outerextent[3],projection='cyl')
+
+    
     if BaseMap.lower()!='none':
         bmap.readshapefile(BaseMap,BaseField,color="grey")
     if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
@@ -1222,8 +1226,6 @@ if DoDiagnostics:
     elif areatype.lower()=="point":
         plt.scatter(ptlon,ptlat,color="b")
 
-    if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-        wmap=Basemap(llcrnrlon=outerextent[0],llcrnrlat=outerextent[2],urcrnrlon=outerextent[1],urcrnrlat=outerextent[3],projection='cyl')
 
     os.system('rm '+diagpath+'Storm*.png')
     for i in range(0,nstorms):    
@@ -1670,7 +1672,6 @@ if FreqAnalysis:
 
 
 if Scenarios:
-    
     print "writing spacetime rainfall scenarios..."
     
     # if desired, this will "pad" the beginning of the scenarios to add a spin-up period.  Not recommended to use long spin-ups, due to memory constraints
