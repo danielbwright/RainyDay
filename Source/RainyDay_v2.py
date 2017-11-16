@@ -749,10 +749,11 @@ else:
         temphour[i]=temptime[i].astype(object).hour
     
     hourinclude[np.logical_and(np.greater_equal(temphour,starthour),np.less_equal(temphour,endhour))]=1
+    if len(hourinclude)!=len(temptime):
+        sys.exit("Something is wrong in the hour exclusion calculation!")
 
 hourinclude=hourinclude.astype('bool')
-if len(hourinclude)!=len(temptime):
-    sys.exit("Something is wrong in the hour exclusion calculation!")
+
 #temptime[hourinclude] # checked, seems to be working right
  
         
