@@ -142,8 +142,8 @@ fields with Stochastic Storm Transposition for assessment of rainfall-driven haz
 start = time.time()
 parameterfile='ttt'
 
-parameterfile=np.str(sys.argv[1])
-#parameterfile='/Users/daniel/Google_Drive/RainyDay2/IrregularDomainTesting/defaulttesting.txt'
+#parameterfile=np.str(sys.argv[1])
+parameterfile='/Users/daniel/Google_Drive/RainyDay2/IrregularDomainTesting/defaulttesting.txt'
 
 if os.path.isfile(parameterfile)==False:
     sys.exit("You either didn't specify a parameter file, or it doesn't exist.")
@@ -1500,6 +1500,8 @@ for i in range(0,nstorms):
     else:
         whichrain[whichstorms==i]=RainyDay.SSTalt(passrain,whichx[whichstorms==i],whichy[whichstorms==i],trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth)*rainprop.timeres/60./mnorm
    
+
+
     
 
 # HERE ARE THE ANNUAL MAXIMA!!!
@@ -1570,7 +1572,14 @@ if alllevels==False:
     sorty=sorty[reducedlevind,:]
     whichorigstorm=whichorigstorm[reducedlevind,:]
     
+
+
+# what is this?
+nanmask=deepcopy(trimmask)
+nanmask[np.isclose(nanmask,0.)]=np.nan
+nanmask[np.isclose(nanmask,0.)==False]=1.0
     
+
 #################################################################################
 # STEP 2a (OPTIONAL): Find the single storm maximized storm rainfall-added DBW 7/19/2017
 #################################################################################    
@@ -1578,9 +1587,6 @@ if alllevels==False:
 if deterministic:
     print "finding maximizing rainfall..."
     
-    nanmask=deepcopy(trimmask)
-    nanmask[np.isclose(nanmask,0.)]=np.nan
-    nanmask[np.isclose(nanmask,0.)==False]=1.0
     max_trnsx=catx[-1]
     max_trnsy=caty[-1]
     if rotation==False:
