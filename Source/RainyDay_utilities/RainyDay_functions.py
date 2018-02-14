@@ -43,12 +43,20 @@ from matplotlib.patches import Polygon
 from scipy import stats
 from netCDF4 import Dataset, num2date, date2num
 import gdal
+
+import numba
 from numba import jit
+
+from scipy.stats import norm
+from scipy.stats import lognorm
 
 # plotting stuff, really only needed for diagnostic plots
 import matplotlib.pyplot as plt
 import matplotlib
 from matplotlib.colors import LogNorm 
+
+import warnings
+warnings.filterwarnings("ignore")
 
 
 HRAP="+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-105 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs"          # RainyDay doesn't currently support anything other than geographic projections
@@ -124,6 +132,7 @@ def catalogAlt_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rains
     
     return rmax, wheremax[0][0], wheremax[1][0]
 
+
 @jit(nopython=True)
 def catalogNumba_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask):
     rainsum[:]=0.
@@ -140,6 +149,7 @@ def catalogNumba_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rai
     wheremax=np.where(rainsum==rmax)
     return rmax, wheremax[0][0], wheremax[1][0]
 
+
 @jit(nopython=True)
 def catalogNumba(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum):
     rainsum[:]=0.
@@ -154,14 +164,108 @@ def catalogNumba(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum):
     wheremax=np.where(rainsum==rmax)
     return rmax, wheremax[0][0], wheremax[1][0]
 
-def SSTalt(passrain,whichx,whichy,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth):
-    rainsum=np.zeros((len(whichx)),dtype='float32')
-    nreals=len(rainsum)
 
-    for i in range(0,nreals):
-        rainsum[i]=np.nansum(np.multiply(passrain[(whichy[i]) : (whichy[i]+maskheight) , (whichx[i]) : (whichx[i]+maskwidth)],trimmask))
+@jit(nopython=True)
+def DistributionBuilder(intenserain,tempmax,xlen,ylen,checksep):
+    for y in np.arange(0,ylen):
+        for x in np.arange(0,xlen):
+            if np.any(checksep[:,y,x]):
+                #fixind=np.where(checksep[:,y,x]==True)
+                for i in np.arange(0,checksep.shape[0]):
+                    if checksep[i,y,x]==True:
+                        fixind=i
+                        break
+                if tempmax[y,x]>intenserain[fixind,y,x]:
+                    intenserain[fixind,y,x]=tempmax[y,x]
+                    checksep[:,y,x]=False
+                    checksep[fixind,y,x]=True
+                else:
+                    checksep[fixind,y,x]=False
+            elif tempmax[y,x]>np.min(intenserain[:,y,x]):
+                fixind=np.argmin(intenserain[:,y,x])
+                intenserain[fixind,y,x]=tempmax[y,x]
+                checksep[fixind,y,x]=True
+    return intenserain,checksep
+
+
+
+#def SSTalt(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intense_data=False):
+#    rainsum=np.zeros((len(sstx)),dtype='float32')
+#    nreals=len(rainsum)
+#
+#    for i in range(0,nreals):
+#        rainsum[i]=np.nansum(np.multiply(passrain[(ssty[i]) : (ssty[i]+maskheight) , (sstx[i]) : (sstx[i]+maskwidth)],trimmask))
+#    return rainsum
+
+
+@jit(nopython=True)
+def numba_lnorm_calc(AOIrain,transrain,mom_varR,mom_meanR,sample_mean,sample_var,lenx,tvar):
+    sampR=np.divide(AOIrain,transrain)
+    for y in np.arange(0,sampR.shape[1]):
+        for x in np.arange(0,sampR.shape[2]): 
+            sampRv=sampR[np.isfinite(sampR[:,y,x]),y,x]
+            lenx=sampRv.shape[0] 
+            if lenx>3:              
+                sample_mean=np.mean(sampRv)
+                sample_var=np.var(sampRv)
+                tvar=np.log((sample_var+sample_mean*sample_mean)/np.power(sample_mean,2))
+                mom_varR[y,x]=tvar
+                mom_meanR[y,x]=np.log(sample_mean)-0.5*tvar
+            else:
+                # this isn't a very satisfactory error-handling procedure
+                mom_varR[y,x]=0.0001
+                mom_meanR[y,x]=0.
+        
+    return mom_varR,mom_meanR
+
+@jit(nopython=True)
+def numba_multimask_calc(passrain,rainsum,train,trimmask,ssty,maskheight,sstx,maskwidth,multipliermask):
+    train=np.multiply(passrain[(ssty) : (ssty+maskheight) , (sstx) : (sstx+maskwidth)],multipliermask)
+    rainsum=np.sum(np.multiply(train,trimmask))       
     return rainsum
-      
+
+
+#@jit(nopython=True)
+def SSTalt(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intense_data=False):
+    rainsum=np.zeros((len(sstx)),dtype='float32')
+    nreals=len(rainsum)
+    if intense_data!=False:
+        intquant=intense_data[0]
+        fieldrain=intense_data[1]
+        ymin=intense_data[2]
+        ymax=intense_data[3]
+        xmin=intense_data[4]
+        xmax=intense_data[5]
+        AOIrain=fieldrain[:,ymin:ymax+1,xmin:xmax+1]
+        mom_varR=np.empty((AOIrain.shape[1],AOIrain.shape[2]),dtype='float32')
+        mom_meanR=np.empty((AOIrain.shape[1],AOIrain.shape[2]),dtype='float32')
+        train=np.empty((AOIrain.shape[1],AOIrain.shape[2]),dtype='float32')
+        sample_mean=np.float32(0.)
+        sample_var=np.float32(0.)
+        rsum=np.float32(0.)
+        tvar=np.float32(0.)
+        lenx=np.int8(0.)
+        maskheight=np.int8(maskheight)
+        maskwidth=np.int8(maskwidth)
+        
+    for k in range(0,nreals):
+        if intense_data!=False and (ssty[k]!=ymin and sstx[k]!=xmin):
+            transrain=fieldrain[:,ssty[k]:ssty[k]+maskheight,sstx[k]:sstx[k]+maskwidth]
+            mom_varR,mom_meanR=numba_lnorm_calc(AOIrain,transrain,mom_varR,mom_meanR,sample_mean,sample_var,lenx,tvar)
+            
+            # the non-jit version
+            #mom_varR[np.isnan(mom_varR)]=np.nanmean(mom_varR)     
+            #mom_meanR[np.isnan(mom_meanR)]=np.nanmean(mom_meanR)
+    
+            multipliermask=sp.stats.lognorm.ppf(intquant[k],np.sqrt(mom_varR),loc=0,scale=np.exp(mom_meanR))
+            rainsum[k]=numba_multimask_calc(passrain,rsum,train,trimmask,ssty[k],maskheight,sstx[k],maskwidth,multipliermask)
+            # the non-fit version
+            #train=np.multiply(passrain[(ssty[k]) : (ssty[k]+maskheight) , (sstx[k]) : (sstx[k]+maskwidth)],multipliermask)  
+            #rainsum[k]=np.nansum(np.multiply(train,trimmask))  
+        else:
+            rainsum[k]=np.nansum(np.multiply(passrain[(ssty[k]) : (ssty[k]+maskheight) , (sstx[k]) : (sstx[k]+maskwidth)],trimmask))
+    return rainsum
+
 
 #==============================================================================
 # THIS VARIANT IS SIMPLER AND UNLIKE SSTWRITE, IT ACTUALLY WORKS RELIABLY!
@@ -244,10 +348,7 @@ def SSTalt(passrain,whichx,whichy,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwi
 #    return outrain
        
 
-#==============================================================================
-# SAME AS ABOVE, BUT A BIT MORE DYNAMIC IN TERMS OF SPINUP
-#==============================================================================    
-def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,ptime,rainprop,rlzanglebin=None,delarray=None,spin=False,flexspin=True,samptype='uniform',cumkernel=None,rotation=False,domaintype='rectangular'):
+def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,maskheight,maskwidth,precat,ptime,rainprop,rlzanglebin=None,delarray=None,spin=False,flexspin=True,samptype='uniform',cumkernel=None,rotation=False,domaintype='rectangular',intense_data=False):
     catyears=ptime.astype('datetime64[Y]').astype(int)+1970
     ptime=ptime.astype('datetime64[M]').astype(int)-(catyears-1970)*12+1
     nyrs=np.int(rlzx.shape[0])
@@ -255,13 +356,20 @@ def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskh
     outrain=np.zeros((nyrs,raindur,maskheight,maskwidth),dtype='float32')
     unqstm,unqind,unqcnts=np.unique(rlzstm,return_inverse=True,return_counts=True)      # unqstm is the storm number
     
+    if intense_data!=False:
+        intquant=intense_data[0]
+        fullmu=intense_data[1]
+        fullstd=intense_data[2]
+        muorig=intense_data[3]
+        stdorig=intense_data[4]
     
     for i in range(0,len(unqstm)):
         unqwhere=np.where(unqstm[i]==rlzstm)[0]
         unqmonth=ptime[unqstm[i]]
         pretimeind=np.where(np.logical_and(ptime>unqmonth-1,ptime<unqmonth+1))[0]
         
-        if spin==True and flexspin==True:
+        # flexspin allows you to use spinup rainfall from anywhere in transposition domain, rather than just storm locations, but it doesn't seem to be very useful based on initial testing
+        if spin==True and flexspin==True:       
             if samptype=='kernel' or domaintype=='irregular':
                 rndloc=np.random.random_sample(len(unqwhere))
                 shiftprex,shiftprey=numbakernel(rndloc,cumkernel)
@@ -272,6 +380,15 @@ def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskh
         ctr=0   
         for j in unqwhere:
             inrain=catrain[unqstm[i],:].copy()
+            
+            if intense_data!=False:
+                transmu=np.multiply(fullmu[(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)],trimmask)
+                transtd=np.multiply(fullstd[(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)],trimmask)
+                mu_multi=transmu/muorig[unqstm[i]]
+                std_multi=np.abs(transtd-stdorig[unqstm[i]])/stdorig[unqstm[i]]
+                multipliermask=norm.ppf(intquant[j],loc=mu_multi,scale=std_multi)
+                multipliermask[multipliermask<0.]=0.
+                multipliermask[np.isnan(multipliermask)]=0.
             
             # this doesn't rotate the prepended rainfall
             if rotation==True:
@@ -298,9 +415,94 @@ def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskh
             else:
                 sys.exit("what else is there?")
             ctr=ctr+1
-      
-            outrain[j,:]=np.multiply(temprain,trimmask)
+            if intense_data!=False:
+                outrain[j,:]=np.multiply(temprain,multipliermask)
+            else:
+                outrain[j,:]=np.multiply(temprain,trimmask)
     return outrain
+
+
+##==============================================================================
+## SAME AS ABOVE, BUT A BIT MORE DYNAMIC IN TERMS OF SPINUP
+##==============================================================================    
+#def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,xmin,xmax,ymin,ymax,maskheight,maskwidth,precat,ptime,rainprop,rlzanglebin=None,delarray=None,spin=False,flexspin=True,samptype='uniform',cumkernel=None,rotation=False,domaintype='rectangular',intense_data=False):
+#    catyears=ptime.astype('datetime64[Y]').astype(int)+1970
+#    ptime=ptime.astype('datetime64[M]').astype(int)-(catyears-1970)*12+1
+#    nyrs=np.int(rlzx.shape[0])
+#    raindur=np.int(catrain.shape[1]+precat.shape[1])
+#    outrain=np.zeros((nyrs,raindur,maskheight,maskwidth),dtype='float32')
+#    unqstm,unqind,unqcnts=np.unique(rlzstm,return_inverse=True,return_counts=True)      # unqstm is the storm number
+#    
+#    if intense_data!=False:
+#        sys.exit("Scenario writing for intensity-based resampling not tested!")
+#        intquant=intense_data[0]
+#        fullmu=intense_data[1]
+#        fullstd=intense_data[2]
+#        muorig=intense_data[3]
+#        stdorig=intense_data[4]
+#    
+#    for i in range(0,len(unqstm)):
+#        unqwhere=np.where(unqstm[i]==rlzstm)[0]
+#        unqmonth=ptime[unqstm[i]]
+#        pretimeind=np.where(np.logical_and(ptime>unqmonth-1,ptime<unqmonth+1))[0]
+#        
+#        if transpotype=='intensity':
+#            origmu=np.multiply(murain[caty[i]:caty[i]+maskheight,catx[i]:catx[i]+maskwidth],trimmask)
+#            origstd=np.multiply(stdrain[caty[i]:caty[i]+maskheight,catx[i]:catx[i]+maskwidth],trimmask)
+#            #intense_dat=[intquant[],murain,stdrain,origmu,origstd]
+#        
+#        # flexspin allows you to use spinup rainfall from anywhere in transposition domain, rather than just storm locations, but it doesn't seem to be very useful based on initial testing
+#        if spin==True and flexspin==True:       
+#            if samptype=='kernel' or domaintype=='irregular':
+#                rndloc=np.random.random_sample(len(unqwhere))
+#                shiftprex,shiftprey=numbakernel(rndloc,cumkernel)
+#            else:
+#                shiftprex=np.random.random_integers(0,np.int(rainprop.subdimensions[1])-maskwidth-1,len(unqwhere))
+#                shiftprey=np.random.random_integers(0,np.int(rainprop.subdimensions[0])-maskheight-1,len(unqwhere))
+#            
+#        ctr=0   
+#        for j in unqwhere:
+#            inrain=catrain[unqstm[i],:].copy()
+#            
+#            if intense_data!=False:
+#                transmu=np.multiply(fullmu[(rlzy[i]) : (rlzy[i]+maskheight) , (rlzx[i]) : (rlzx[i]+maskwidth)],trimmask)
+#                transtd=np.multiply(fullstd[(rlzy[i]) : (rlzy[i]+maskheight) , (rlzx[i]) : (rlzx[i]+maskwidth)],trimmask)
+#                mu_multi=transmu/muorig
+#                std_multi=np.abs(transtd-stdorig)/stdorig
+#                multipliermask=norm.ppf(intquant[i],loc=mu_multi,scale=std_multi)
+#                multipliermask[multipliermask<0.]=0.
+#                multipliermask[np.isnan(multipliermask)]=0.
+#            
+#            # this doesn't rotate the prepended rainfall
+#            if rotation==True:
+#                xctr=rlzx[j]+maskwidth/2.
+#                yctr=rlzy[j]+maskheight/2.
+#                xlinsp=np.linspace(-xctr,rainprop.subdimensions[1]-xctr,rainprop.subdimensions[1])
+#                ylinsp=np.linspace(-yctr,rainprop.subdimensions[0]-yctr,rainprop.subdimensions[0])
+#        
+#                ingridx,ingridy=np.meshgrid(xlinsp,ylinsp)
+#                ingridx=ingridx.flatten()
+#                ingridy=ingridy.flatten()
+#                outgrid=np.column_stack((ingridx,ingridy))  
+#                
+#                for k in range(0,inrain.shape[0]):
+#                    interp=sp.interpolate.LinearNDInterpolator(delarray[unqstm[i]][rlzanglebin[j]-1],inrain[k,:].flatten(),fill_value=0.)
+#                    inrain[k,:]=np.reshape(interp(outgrid),rainprop.subdimensions)
+#                    
+#            if spin==True and flexspin==True:
+#                temprain=np.concatenate((np.squeeze(precat[np.random.choice(pretimeind, 1),:,(shiftprey[ctr]) : (shiftprey[ctr]+maskheight) , (shiftprex[ctr]) : (shiftprex[ctr]+maskwidth)],axis=0),inrain[:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)]),axis=0)
+#            elif spin==True and flexspin==False:
+#                temprain=np.concatenate((np.squeeze(precat[np.random.choice(pretimeind, 1),:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)],axis=0),inrain[:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)]),axis=0)
+#            elif spin==False:
+#                temprain=inrain[:,(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)]
+#            else:
+#                sys.exit("what else is there?")
+#            ctr=ctr+1
+#            if intense_data!=False:
+#                outrain[j,:]=np.multiply(temprain,multipliermask)
+#            else:
+#                outrain[j,:]=np.multiply(temprain,trimmask)
+#    return outrain
     
     
 #==============================================================================
@@ -366,10 +568,9 @@ def numbakernel(rndloc,cumkernel,tempx,tempy):
     nlocs=len(rndloc)
     ncols=cumkernel.shape[1]
     flatkern=np.append(0.,cumkernel.flatten())
-    #sys.exit("this won't work, need to deal with nans in cumkernel")
+    # there is a problem with this if there are actually zeros within the pltkernel variable
     
     for i in range(0,nlocs):
-        #whereind=np.where(np.logical_and(rndloc[i]>flatkern[0:-1],rndloc[i]<=flatkern[1:]))[0][0]
         x=rndloc[i]-flatkern
         x[np.less(x,0.)]=np.nan
         whereind = np.nanargmin(x)
@@ -688,6 +889,53 @@ def writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,
     dataset.close()
 
 
+def writeintensityfile(intenserain,catalogname,latrange,lonrange):
+    # SAVE outrain AS NETCDF FILE
+    intname=catalogname.split('.nc')
+    if len(intname)>2:
+        sys.exit("naming problem in the intensity catalog writing function")
+    else:
+        dataset=Dataset(intname[0]+'_intensityfile.nc', 'w', format='NETCDF4')
+    
+    # create dimensions
+    outlats=dataset.createDimension('outlat',intenserain.shape[1])
+    outlons=dataset.createDimension('outlon',intenserain.shape[2])
+    nstorms=dataset.createDimension('nstorms',intenserain.shape[0])
+
+    # create variables
+    latitudes=dataset.createVariable('latitude',np.float32, ('outlat',))
+    longitudes=dataset.createVariable('longitude',np.float32, ('outlon',))
+    stormtotals=dataset.createVariable('stormtotals',np.float32,('nstorms','outlat','outlon',),zlib=True,complevel=4,least_significant_digit=2) 
+
+
+    dataset.history = 'Created ' + str(datetime.now())
+    dataset.source = 'RainyDay Storm Intensity File'
+    
+    # Variable Attributes (time since 1970-01-01 00:00:00.0 in numpys)
+    latitudes.units = 'degrees north'
+    longitudes.units = 'degrees east'
+    stormtotals.units = 'mm'
+
+    # fill the netcdf file
+    latitudes[:]=latrange
+    longitudes[:]=lonrange
+    stormtotals[:]=intenserain
+    
+    dataset.close()
+    
+def readintensityfile(rfile):
+    intname=rfile.split('.nc')
+    if len(intname)>2:
+        sys.exit("naming problem in the intensity catalog writing function")
+    else:
+        infile=Dataset(intname[0]+'_intensityfile.nc','r')
+    outrain=np.array(infile.variables['stormtotals'][:])
+    infile.close()
+    return outrain
+
+    
+
+
 #==============================================================================    
 # http://stackoverflow.com/questions/10106901/elegant-find-sub-list-in-list 
 #============================================================================== 
@@ -827,12 +1075,5 @@ def readrealization(rfile):
     
     infile.close()
     return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outreturnperiod,outstormnumber,origstormnumber
-
-
-#==============================================================================
-# DIFFERENT PROJECTIONS
-#==============================================================================
-HRAP="+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-105 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs"
-GEOG="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
 
 
