@@ -40,10 +40,6 @@ utc = pytz.utc
 
 from mpl_toolkits.basemap import Basemap
 
-
-
-#from scipy.stats import norm
-
 # plotting stuff, really only needed for diagnostic plots
 import matplotlib
 matplotlib.use('Agg')
@@ -293,7 +289,7 @@ except IndexError:
 # transposition
 try:
     transpotype=cardinfo[cardinfo[:,0]=="TRANSPOSITION",1][0]
-    if transpotype.lower()=='kernel':
+    if transpotype.lower()=='kernel' or transpotype.lower()=='nonuniform':
         transpotype='kernel'
         print "You selected the kernel density-based non-uniform storm transposition scheme!"
     elif transpotype.lower()=='user':
@@ -1103,7 +1099,7 @@ elif transpotype=='kernel':
     transpokernel=np.empty(pltkernel.shape,dtype='float64')
     phome=pltkernel[ymin,xmin]          # I hope this is right... I think so.
     if np.isclose(phome,0.):
-        sys.exit("There is a zero probability of transposition to your location of interest. RainyDay's kernel transposition scheme doesn't know how to cope with this...")
+        sys.exit("There is a zero probability of transposition to your location of interest. RainyDay's non-uniform transposition scheme doesn't know how to cope with this...")
     transpokernel[np.less(pltkernel,phome)]=pltkernel[np.less(pltkernel,phome)]/phome
     transpokernel[np.greater(pltkernel,phome)]=phome/pltkernel[np.greater(pltkernel,phome)]
     transpokernel[np.equal(pltkernel,phome)]=1.0
@@ -1188,7 +1184,7 @@ if DoDiagnostics:
     cb.set_label("Probability of storm occurrence")
     #plt.text(probextent[0],probextent[3]-(maskheight/2)*rainprop.spatialres[0],"*Probability map may not extend to the edge of map.\nThat isn't a mistake!",size=6)
     plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
-    plt.savefig(diagpath+'KernelDensity.png',dpi=250)
+    plt.savefig(diagpath+'StormProbability.png',dpi=250)
     plt.close('all')
     
     # PLOT AVERAGE STORM RAINFALL
