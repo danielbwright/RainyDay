@@ -34,7 +34,7 @@ import math
 from datetime import datetime, date, time, timedelta      
 import time
 from copy import deepcopy
-from scipy import ndimage
+from scipy import ndimage, stats
 import pytz
 utc = pytz.utc  
 
