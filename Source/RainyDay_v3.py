@@ -307,10 +307,10 @@ try:
 except Exception:
     transpotype='uniform'
     print "You didn't specify 'TRANSPOSITION', defaulting to spatially uniform scheme!"
-    
+
 try:   
     do_deterministic=cardinfo[cardinfo[:,0]=="DETERMINISTIC",1][0]
-    if do_deterministic.lower():
+    if do_deterministic.lower()=='true':
         deterministic=True
     else:
         deterministic=False
