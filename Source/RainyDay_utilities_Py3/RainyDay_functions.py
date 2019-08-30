@@ -107,7 +107,7 @@ def find_nearest(array,value):
 def catalogAlt(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask):
     rainsum[:]=0.
     for i in range(0,(ylen)*(xlen)):
-        y=i/xlen
+        y=i//xlen
         x=i-y*xlen
         #print x,
         rainsum[y,x]=np.nansum(np.multiply(temparray[(y):(y+maskheight),(x):(x+maskwidth)],trimmask))
@@ -628,7 +628,7 @@ def pykernel(rndloc,cumkernel):
         x=rndloc[i]-flatkern
         x[np.less(x,0.)]=np.nan
         whereind = np.nanargmin(x)
-        y=whereind/ncols
+        y=whereind//ncols
         x=whereind-y*ncols        
         tempx[i]=x
         tempy[i]=y
@@ -645,7 +645,7 @@ def numbakernel(rndloc,cumkernel,tempx,tempy):
         x=rndloc[i]-flatkern
         x[np.less(x,0.)]=np.nan
         whereind = np.nanargmin(x)
-        y=whereind/ncols
+        y=whereind//ncols
         x=whereind-y*ncols 
         tempx[i]=x
         tempy[i]=y

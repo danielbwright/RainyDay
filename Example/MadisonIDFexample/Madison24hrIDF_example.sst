@@ -41,8 +41,9 @@ RETURNTHRESHOLD	1
 
 # WHAT KIND OF SHAPE ARE WE SAMPLING FOR? OPTIONS ARE:
 # 		POINT (NOT RECOMMENDED FOR CONSTRUCTING STORM CATALOGS, BUT OK FOR SUBSEQUENT WORK), BOX, OR WATERSHED
-POINTAREA	point																		# OPTIONS: “point”,“basin”,”box”
+POINTAREA	point																	# OPTIONS: “point”,“basin”,”box”
 WATERSHEDSHP	/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Source/Preprocessing/BigThompson/Watershed/BigThompson.shp	# ONLY NEEDED IF A MASKFILE DOESN'T ALREADY EXIST
+POINTLIST	/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/MadisonIDFexample/WI_pointlist.txt
 POINTLAT	43.075 
 POINTLON	-89.385
 BOX_YMIN	43.
