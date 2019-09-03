@@ -38,7 +38,7 @@ from netCDF4 import Dataset, num2date, date2num
 #import gdal
 import rasterio
 
-from numba import jit
+from numba import prange,jit
 
 from scipy.stats import norm
 from scipy.stats import lognorm
@@ -48,7 +48,6 @@ import matplotlib.pyplot as plt
 import matplotlib
 from matplotlib.colors import LogNorm 
 
-import os
 import subprocess
 try:
     os.environ.pop('PYTHONIOENCODING')
@@ -58,6 +57,7 @@ except KeyError:
 import warnings
 warnings.filterwarnings("ignore")
 
+from numba.types import int32,int64,float32,uint32
 
 HRAP="+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-105 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs"          # RainyDay doesn't currently support anything other than geographic projections
 GEOG="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
@@ -134,20 +134,22 @@ def catalogAlt_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rains
 
 
 
-@jit(nopython=True)
+@jit(nopython=True,fastmath=True)  
 def catalogNumba_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask):
     rainsum[:]=0.
+    halfheight=int32(np.ceil(maskheight/2))
+    halfwidth=int32(np.ceil(maskwidth/2))
     for i in range(0,ylen*xlen):
         y=i//xlen
         x=i-y*xlen
         #print x,y
-        if np.any(np.equal(domainmask[y+int(np.ceil(maskheight/2)),x:x+maskwidth],1.)) and np.any(np.equal(domainmask[y:y+maskheight,x+int(np.ceil(maskwidth/2))],1.)):
+        if np.any(np.equal(domainmask[y+halfheight,x:x+maskwidth],1.)) and np.any(np.equal(domainmask[y:y+maskheight,x+halfwidth],1.)):
             rainsum[y,x]=np.nansum(np.multiply(temparray[y:(y+maskheight),x:(x+maskwidth)],trimmask))
         else:
             rainsum[y,x]=0.
     #wheremax=np.argmax(rainsum)
     rmax=np.nanmax(rainsum)
-    wheremax=np.where(rainsum==rmax)
+    wheremax=np.where(np.equal(rainsum,rmax))
     return rmax, wheremax[0][0], wheremax[1][0]
 
 
@@ -216,128 +218,185 @@ def DistributionBuilderFast(intenserain,tempmax,xlen,ylen,checksep):
 
 #def SSTalt(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intense_data=False):
 #    rainsum=np.zeros((len(sstx)),dtype='float32')
-#    nreals=len(rainsum)
+#   nreals=len(rainsum)
 #
 #    for i in range(0,nreals):
 #        rainsum[i]=np.nansum(np.multiply(passrain[(ssty[i]) : (ssty[i]+maskheight) , (sstx[i]) : (sstx[i]+maskwidth)],trimmask))
 #    return rainsum
 
 
-@jit(nopython=True)
-def numba_lnorm_calc(AOIrain,transrain,mom_varR,mom_meanR,sample_mean,sample_var,lenx,tvar):
-    sampR=np.divide(AOIrain,transrain)
-    for y in np.arange(0,sampR.shape[1]):
-        for x in np.arange(0,sampR.shape[2]): 
-            sampRv=sampR[np.isfinite(sampR[:,y,x]),y,x]
-            lenx=sampRv.shape[0] 
-            if lenx>3:              
-                sample_mean=np.mean(sampRv)
-                sample_var=np.var(sampRv)
-                tvar=np.log((sample_var+sample_mean*sample_mean)/np.power(sample_mean,2))
-                mom_varR[y,x]=tvar
-                mom_meanR[y,x]=np.log(sample_mean)-0.5*tvar
-            else:
-                # this isn't a very satisfactory error-handling procedure
-                mom_varR[y,x]=0.0001
-                mom_meanR[y,x]=0.
-        
-    return mom_varR,mom_meanR
-
-@jit(nopython=True)
-def numba_multimask_calc(passrain,rainsum,train,trimmask,ssty,maskheight,sstx,maskwidth,multipliermask):
-    train=np.multiply(passrain[(ssty) : (ssty+maskheight) , (sstx) : (sstx+maskwidth)],multipliermask)
-    rainsum=np.sum(np.multiply(train,trimmask))       
-    return rainsum
-
-
-@jit
-def SSTalt(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intense_data=False,durcheck=False):
-    rainsum=np.zeros((len(sstx)))
-    #whichstep=np.zeros((len(sstx)))
-
+@jit(fastmath=True)
+def SSTalt(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intensemean=None,intensestd=None,intensecorr=None,homemean=None,homestd=None,durcheck=False):
+    rainsum=np.zeros((len(sstx)),dtype='float32')
     nreals=len(rainsum)
     nsteps=passrain.shape[0]
-    if intense_data!=False:
-        intquant=intense_data[0]
-        fieldrain=intense_data[1]       # the distribution of top N storms from, for example, StageIV_Top100storms_daily.nc
-        ymin=intense_data[2]
-        ymax=intense_data[3]
-        xmin=intense_data[4]
-        xmax=intense_data[5]
-        AOIrain=fieldrain[:,ymin:ymax+1,xmin:xmax+1]  # the distribution of storms for the "box" or "point" of interest (AOI)
-        mom_varR=np.empty((AOIrain.shape[1],AOIrain.shape[2]),dtype='float32')
-        mom_meanR=np.empty((AOIrain.shape[1],AOIrain.shape[2]),dtype='float32')
-        train=np.empty((AOIrain.shape[1],AOIrain.shape[2]),dtype='float32')
+    multiout=np.empty_like(rainsum)
+    if (intensemean is not None) and (homemean is not None):
+        domean=True
     else:
-        # why do I need this stuff? I don't get it. Numba is a headache
-        AOIrain=False
-        fieldrain=False
-        intquant=False
-        mom_varR=False
-        mom_meanR=False
-        train=False
-        ymin=False
-        ymax=False
-        xmin=False
-        xmax=False
-    maskheight=np.int8(maskheight)
-    maskwidth=np.int8(maskwidth) 
-    rsum=np.float32(0.)
-    tvar=np.float32(0.)
-    lenx=np.int8(0.)
-    sample_mean=np.float32(0.)
-    sample_var=np.float32(0.)
+        domean=False
+
+    if (intensestd is not None) and (intensecorr is not None) and (homestd is not None):
+        rquant=np.random.random_integers(5,high=95,size=nreals)/100.
+        doall=True
+    else:
+        doall=False
+        rquant=np.nan
+        
     
     if durcheck==False:
         exprain=np.expand_dims(passrain,0)
     else:
         exprain=passrain
+        
 
     for k in range(0,nreals):
-        if np.all(np.less(exprain[:,ssty[k]:ssty[k]+maskheight,sstx[k]:sstx[k]+maskwidth],0.5)):
+        y=int(ssty[k])
+        x=int(sstx[k])
+        if np.all(np.less(exprain[:,y:y+maskheight,x:x+maskwidth],0.5)):
             rainsum[k]=0.
+            multiout[k]=-999.
         else:
-            if intense_data!=False and (ssty[k]!=ymin and sstx[k]!=xmin):
+            if domean:
                 #sys.exit('need to fix short duration part')
-                transrain=fieldrain[:,ssty[k]:ssty[k]+maskheight,sstx[k]:sstx[k]+maskwidth]
-                mom_varR,mom_meanR=numba_lnorm_calc(AOIrain,transrain,mom_varR,mom_meanR,sample_mean,sample_var,lenx,tvar)
-                
-                # the non-jit version
-                #mom_varR[np.isnan(mom_varR)]=np.nanmean(mom_varR)     
-                #mom_meanR[np.isnan(mom_meanR)]=np.nanmean(mom_meanR)
-        
-                multipliermask=sp.stats.lognorm.ppf(intquant[k],np.sqrt(mom_varR),loc=0,scale=np.exp(mom_meanR))
-                if durcheck==False:            
-                    rainsum[k]=numba_multimask_calc(passrain,rsum,train,trimmask,ssty[k],maskheight,sstx[k],maskwidth,multipliermask)
+                muR=homemean-intensemean[y,x]
+                if doall:
+                    stdR=np.sqrt(homestd*homestd+intensestd[y,x]*intensestd[y,x]-2.*intensecorr[y,x]*homestd*intensestd[y,x])
+                    multiplier=sp.stats.lognorm.ppf(rquant[k],stdR,loc=0,scale=np.exp(muR))                    
                 else:
-                    storesum=0.
-                    #storestep=0
-                    for kk in range(0,nsteps):
-                        tempsum=numba_multimask_calc(passrain[kk,:],rsum,train,trimmask,ssty[k],maskheight,sstx[k],maskwidth,multipliermask)
-                        if tempsum>storesum:
-                            storesum=tempsum
-                            #storestep=kk
-                    rainsum[k]=storesum
-                    #whichstep[k]=storestep
-                    
-                # the non-fit version
-                #train=np.multiply(passrain[(ssty[k]) : (ssty[k]+maskheight) , (sstx[k]) : (sstx[k]+maskwidth)],multipliermask)  
-                #rainsum[k]=np.nansum(np.multiply(train,trimmask))  
+                    multiplier=np.exp(muR)
             else:
-                if durcheck==False:
-                    rainsum[k]=np.nansum(np.multiply(passrain[(ssty[k]) : (ssty[k]+maskheight) , (sstx[k]) : (sstx[k]+maskwidth)],trimmask))
-                else:
-                    storesum=0.
-                    #storestep=0
-                    for kk in range(0,nsteps):
-                        tempsum=np.nansum(np.multiply(passrain[kk,ssty[k]:(ssty[k]+maskheight),sstx[k]:(sstx[k]+maskwidth)],trimmask))
-                        if tempsum>storesum:
-                            storesum=tempsum
-                            #storestep=kk
-                    rainsum[k]=storesum
+                multiplier=1.0
+#            print("still going!")
+            if multiplier>5.:
+                sys.exit("Something seems to be going horribly wrong in the multiplier scheme!")
+            else:
+                multiout[k]=multiplier
+        
+            if durcheck==True:            
+                storesum=0.
+                #storestep=0
+                for kk in range(0,nsteps):
+                    #tempsum=numba_multimask_calc(passrain[kk,:],rsum,train,trimmask,ssty[k],maskheight,sstx[k],maskwidth)*multiplier
+                    tempsum=numba_multimask_calc(passrain[kk,:],trimmask,y,x,maskheight,maskwidth)*multiplier
+                    if tempsum>storesum:
+                        storesum=tempsum
+                        #storestep=kk
+                rainsum[k]=storesum
                     #whichstep[k]=storestep
-    #return rainsum,whichstep
+            else:
+                rainsum[k]=numba_multimask_calc(passrain,trimmask,y,x,maskheight,maskwidth)*multiplier
+    if domean:
+        return rainsum,multiout
+    else:
+        return rainsum
+
+
+@jit(nopython=True,fastmath=True,parallel=True)
+def numba_multimask_calc(passrain,trimmask,ssty,sstx,maskheight,maskwidth):
+    train=np.multiply(passrain[ssty : ssty+maskheight , sstx : sstx+maskwidth],trimmask)
+    rainsum=np.sum(np.multiply(train,trimmask))       
     return rainsum
+
+
+@jit
+def SSTalt_singlecell(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intensemean=None,homemean=None,durcheck=False):
+    rainsum=np.zeros((len(sstx)),dtype='float32')
+    nreals=len(rainsum)
+    nsteps=passrain.shape[0]
+    #masktile=np.repeat(trimmask[np.newaxis,:, :],nsteps, axis=0)
+    
+    if (intensemean is not None) and (homemean is not None):
+        domean=True
+        multiout=np.empty_like(rainsum)
+    else:
+        pass        
+
+
+    if durcheck==False:
+        passrain=np.expand_dims(passrain,0)
+        
+    if domean:
+        rain,multi=killerloop_singlecell(passrain,rainsum,nreals,ssty,sstx,nsteps,durcheck=durcheck,intensemean=intensemean,homemean=homemean,multiout=multiout)
+        return rain,multi
+    else:
+        rain,_=killerloop_singlecell(passrain,rainsum,nreals,ssty,sstx,nsteps,durcheck=durcheck)
+        return rain
+    
+                #whichstep[k]=storestep
+#return rainsum,whichstep
+
+
+
+# this function below never worked for some unknown Numba problem-error messages indicated that it wasn't my fault!!! Some problem in tempsum
+#@jit(nopython=True,fastmath=True,parallel=True)
+#def killerloop(passrain,rainsum,nreals,ssty,sstx,maskheight,maskwidth,masktile,nsteps,durcheck):
+#    for k in prange(nreals):
+#        spanx=sstx[k]+maskwidth
+#        spany=ssty[k]+maskheight
+#        if np.all(np.less(passrain[:,ssty[k]:spany,sstx[k]:spanx],0.5)):
+#            rainsum[k]=0.
+#        else:
+#            if durcheck==False:
+#                #tempstep=np.multiply(passrain[:,ssty[k] : spany , sstx[k] : spanx],trimmask)
+#                #xnum=int64(sstx[k])
+#                #ynum=int64(ssty[k])
+#                #rainsum[k]=np.nansum(passrain[:,ssty[k], sstx[k]])
+#                rainsum[k]=np.nansum(np.multiply(passrain[:,ssty[k] : spany , sstx[k] : spanx],masktile))
+#            else:
+#                storesum=float32(0.)
+#                for kk in range(nsteps):
+#                    #tempsum=0.
+#                    #tempsum=np.multiply(passrain[kk,ssty[k]:spany,sstx[k]:spanx],masktile[0,:,:])
+#                    tempsum=np.nansum(np.multiply(passrain[kk,ssty[k]:spany,sstx[k]:spanx],masktile[0,:,:]))
+#    return rainsum
+
+
+@jit(nopython=True,fastmath=True,parallel=True)
+def killerloop_singlecell(passrain,rainsum,nreals,ssty,sstx,nsteps,durcheck=False,intensemean=None,homemean=None,multiout=None):
+    for k in prange(nreals):
+        y=int(ssty[k])
+        x=int(sstx[k])
+        if (intensemean is not None) and (homemean is not None):
+            multiplier=np.exp(homemean-intensemean[y,x])
+        else:
+            multiplier=1.0        
+        if durcheck==False:
+            rainsum[k]=np.nansum(passrain[:,y, x])
+        else:
+            storesum=float32(0.)
+            for kk in range(nsteps):
+                tempsum=passrain[kk,y,x]
+                if tempsum>storesum:
+                    storesum=tempsum
+            rainsum[k]=storesum*multiplier
+            
+            if multiout is not None:
+                multiout[k]=multiplier
+    #if multiout is not None:
+    return rainsum,multiout
+    #else:
+    #    return rainsum
+
+
+#@jit(nopython=True,fastmath=True,parallel=True)
+#def killerloop(passrain,rainsum,nreals,ssty,sstx,maskheight,maskwidth,trimmask,nsteps,durcheck):
+#    for k in prange(nreals):
+#        spanx=int64(sstx[k]+maskwidth)
+#        spany=int64(ssty[k]+maskheight)
+#        if np.all(np.less(passrain[:,ssty[k]:spany,sstx[k]:spanx],0.5)):
+#            rainsum[k]=0.
+#        else:
+#            if durcheck==False:
+#                rainsum[k]=np.nansum(np.multiply(passrain[ssty[k] : spany , sstx[k] : spanx],trimmask))
+#            else:
+#                storesum=float32(0.)
+#                for kk in range(nsteps):
+#                    tempsum=np.nansum(np.multiply(passrain[kk,ssty[k]:spany,sstx[k]:spanx],trimmask))
+#                    if tempsum>storesum:
+#                        storesum=tempsum
+#                rainsum[k]=storesum
+#    return rainsum
 
 #==============================================================================
 # THIS VARIANT IS SIMPLER AND UNLIKE SSTWRITE, IT ACTUALLY WORKS RELIABLY!
@@ -419,21 +478,14 @@ def SSTalt(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intense_data=False,d
 #            outrain[j,:]=np.multiply(temprain,trimmask)
 #    return outrain
        
-
-def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,maskheight,maskwidth,precat,ptime,rainprop,rlzanglebin=None,delarray=None,spin=False,flexspin=True,samptype='uniform',cumkernel=None,rotation=False,domaintype='rectangular',intense_data=False):
+@jit(fastmath=True)
+def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,maskheight,maskwidth,precat,ptime,rainprop,rlzanglebin=None,delarray=None,spin=False,flexspin=True,samptype='uniform',cumkernel=None,rotation=False,domaintype='rectangular'):
     catyears=ptime.astype('datetime64[Y]').astype(int)+1970
     ptime=ptime.astype('datetime64[M]').astype(int)-(catyears-1970)*12+1
     nyrs=np.int(rlzx.shape[0])
     raindur=np.int(catrain.shape[1]+precat.shape[1])
     outrain=np.zeros((nyrs,raindur,maskheight,maskwidth),dtype='float32')
     unqstm,unqind,unqcnts=np.unique(rlzstm,return_inverse=True,return_counts=True)      # unqstm is the storm number
-    
-    if intense_data!=False:
-        intquant=intense_data[0]
-        fullmu=intense_data[1]
-        fullstd=intense_data[2]
-        muorig=intense_data[3]
-        stdorig=intense_data[4]
     
     for i in range(0,len(unqstm)):
         unqwhere=np.where(unqstm[i]==rlzstm)[0]
@@ -452,16 +504,7 @@ def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,maskheight,maskwidth,prec
         ctr=0   
         for j in unqwhere:
             inrain=catrain[unqstm[i],:].copy()
-            
-            if intense_data!=False:
-                transmu=np.multiply(fullmu[(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)],trimmask)
-                transtd=np.multiply(fullstd[(rlzy[j]) : (rlzy[j]+maskheight) , (rlzx[j]) : (rlzx[j]+maskwidth)],trimmask)
-                mu_multi=transmu/muorig[unqstm[i]]
-                std_multi=np.abs(transtd-stdorig[unqstm[i]])/stdorig[unqstm[i]]
-                multipliermask=norm.ppf(intquant[j],loc=mu_multi,scale=std_multi)
-                multipliermask[multipliermask<0.]=0.
-                multipliermask[np.isnan(multipliermask)]=0.
-            
+                        
             # this doesn't rotate the prepended rainfall
             if rotation==True:
                 xctr=rlzx[j]+maskwidth/2.
@@ -487,10 +530,8 @@ def SSTspin_write_v2(catrain,rlzx,rlzy,rlzstm,trimmask,maskheight,maskwidth,prec
             else:
                 sys.exit("what else is there?")
             ctr=ctr+1
-            if intense_data!=False:
-                outrain[j,:]=np.multiply(temprain,multipliermask)
-            else:
-                outrain[j,:]=np.multiply(temprain,trimmask)
+
+            outrain[j,:]=np.multiply(temprain,trimmask)
     return outrain
 
 
@@ -621,30 +662,28 @@ def pykernel(rndloc,cumkernel):
     ncols=cumkernel.shape[1]
     tempx=np.empty((len(rndloc)),dtype="int32")
     tempy=np.empty((len(rndloc)),dtype="int32")
-    #flatkern=cumkernel.flatten()
     flatkern=np.append(0.,cumkernel.flatten())
     
     for i in range(0,nlocs):
         x=rndloc[i]-flatkern
-        x[np.less(x,0.)]=np.nan
-        whereind = np.nanargmin(x)
+        x[np.less(x,0.)]=1000.
+        whereind = np.argmin(x)
         y=whereind//ncols
         x=whereind-y*ncols        
         tempx[i]=x
         tempy[i]=y
     return tempx,tempy
 
-@jit         
-def numbakernel(rndloc,cumkernel,tempx,tempy):
+@jit 
+def numbakernel(rndloc,cumkernel,tempx,tempy,ncols):
     nlocs=len(rndloc)
-    ncols=cumkernel.shape[1]
+    #ncols=xdim
     flatkern=np.append(0.,cumkernel.flatten())
-    # there is a problem with this if there are actually zeros within the pltkernel variable
-    
-    for i in range(0,nlocs):
+    #x=np.zeros_like(rndloc,dtype='float64')
+    for i in np.arange(0,nlocs):
         x=rndloc[i]-flatkern
-        x[np.less(x,0.)]=np.nan
-        whereind = np.nanargmin(x)
+        x[np.less(x,0.)]=10.
+        whereind=np.argmin(x)
         y=whereind//ncols
         x=whereind-y*ncols 
         tempx[i]=x
@@ -652,6 +691,24 @@ def numbakernel(rndloc,cumkernel,tempx,tempy):
     return tempx,tempy
 
 
+@jit 
+def numbakernel_fast(rndloc,cumkernel,tempx,tempy,ncols):
+    nlocs=int32(len(rndloc))
+    ncols=int32(cumkernel.shape[1])
+    flatkern=np.append(0.,cumkernel.flatten()) 
+    return kernelloop(nlocs,rndloc,flatkern,ncols,tempx,tempy)
+
+@jit(nopython=True,fastmath=True,parallel=True)
+def kernelloop(nlocs,rndloc,flatkern,ncols,tempx,tempy):
+    for i in prange(nlocs):
+        diff=rndloc[i]-flatkern
+        diff[np.less(diff,0.)]=10.
+        whereind=np.argmin(diff)
+        y=whereind//ncols
+        x=whereind-y*ncols 
+        tempx[i]=x
+        tempy[i]=y
+    return tempx,tempy
 
 
 
@@ -1040,6 +1097,19 @@ def readintensityfile(rfile,inbounds=False):
     infile.close()
     return outrain,outtime,outlat,outlon
 
+def readmeanfile(rfile,inbounds=False):
+    infile=Dataset(rfile,'r')
+    if np.any(inbounds!=False):
+        outrain=np.array(infile.variables['stormtotals'][inbounds[3]:inbounds[2]+1,inbounds[0]:inbounds[1]+1])
+        outlat=np.array(infile.variables['latitude'][inbounds[3]:inbounds[2]+1])
+        outlon=np.array(infile.variables['longitude'][inbounds[0]:inbounds[1]+1])
+    else:
+        outrain=np.array(infile.variables['stormtotals'][:])
+        outlat=np.array(infile.variables['latitude'][:])
+        outlon=np.array(infile.variables['longitude'][:])        
+    infile.close()
+    return outrain,outlat,outlon
+
 
 def writedomain(domain,mainpath,latrange,lonrange):
     # SAVE outrain AS NETCDF FILE
@@ -1311,3 +1381,29 @@ def latlondistance(lat1,lon1,lat2,lon2):
     c=2.*np.arctan2(np.sqrt(a),np.sqrt(1-a))
     return R*c
  
+#==============================================================================
+# rescaling functions
+#==============================================================================
+        
+@jit(fastmath=True)
+def intenseloop(intenserain,tempintense,xlen_wmask,ylen_wmask,maskheight,maskwidth,trimmask,mnorm,domainmask):
+    for i in range(0,xlen_wmask*ylen_wmask):
+        y=i//xlen_wmask
+        x=i-y*xlen_wmask
+        if np.equal(domainmask[y,x],1.) and  np.any(np.isnan(intenserain[:,y,x]))==False:
+        # could probably get this working in nopython if I coded the multiplication explicitly, rather than using using the axis argument of nansum, which isn't numba-supported
+            tempintense[:,y,x]=np.sum(np.multiply(intenserain[:,y:(y+maskheight),x:(x+maskwidth)],trimmask),axis=(1,2))/mnorm    
+        else:
+            tempintense[:,y,x]=np.nan
+    return tempintense
+
+@jit(nopython=True,fastmath=True)
+def intense_corrloop(intenserain,intensecorr,homerain,xlen_wmask,ylen_wmask,mnorm,domainmask):   
+    for i in range(0,xlen_wmask*ylen_wmask): 
+        y=i//xlen_wmask
+        x=i-y*xlen_wmask
+        if np.equal(domainmask[y,x],1.) and  np.any(np.isnan(intenserain[:,y,x]))==False:
+            intensecorr[y,x]=np.corrcoef(homerain,intenserain[:,y,x])[0,1]
+        else:
+            intensecorr[y,x]=np.nan
+    return intensecorr
