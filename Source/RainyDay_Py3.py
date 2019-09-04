@@ -851,7 +851,7 @@ elif durcorrection:
 if CreateCatalog==False:
     tdates = pd.DatetimeIndex(cattime[:,0])
     tdates.year
-    nyears=np.max(tdates.year)-np.min(tdates.year)+1
+    nyears=np.max(np.array(tdates.year))-np.min(np.array(tdates.year))+1
 if starthour==0 and endhour==24:
     hourinclude=np.ones((int(24*60/rainprop.timeres)),dtype='int32')
 else:

@@ -310,7 +310,7 @@ def SSTalt_singlecell(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intenseme
         domean=True
         multiout=np.empty_like(rainsum)
     else:
-        pass        
+        domean=False       
 
 
     if durcheck==False:
