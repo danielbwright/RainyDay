@@ -59,21 +59,27 @@ warnings.filterwarnings("ignore")
 
 from numba.types import int32,int64,float32,uint32
 
-HRAP="+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-105 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs"          # RainyDay doesn't currently support anything other than geographic projections
 GEOG="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
 
 
 
+# =============================================================================
+# Smoother that is compatible with nan values. Adapted from https://stackoverflow.com/questions/18697532/gaussian-filtering-a-image-with-nan-in-python
+# =============================================================================
 
+def mysmoother(inarray,sigma=[3,3]):
+    if len(sigma)!=len(inarray.shape):
+        sys.exit("there seems to be a mismatch between the sigma dimension and the dimension of the array you are trying to smooth")
+    V=inarray.copy()
+    V[np.isnan(inarray)]=0.
+    VV=sp.ndimage.gaussian_filter(V,sigma=sigma)
 
-# np.nanmean doesn't exist on some older builds of numpy
-def mynanmean(x,axis):
-    x = np.ma.filled(np.ma.masked_array(x,np.isnan(x)).mean(axis), fill_value=np.nan)
-    return x
-    
-def find_nearest(array,value):
-    idx = (np.abs(array-value)).argmin()
-    return idx
+    W=0.*inarray.copy()+1.
+    W[np.isnan(inarray)]=0.
+    WW=sp.ndimage.gaussian_filter(W,sigma=sigma)
+    outarray=VV/WW
+    outarray[np.isnan(inarray)]=np.nan
+    return outarray
 
 
 #==============================================================================
@@ -358,7 +364,10 @@ def killerloop_singlecell(passrain,rainsum,nreals,ssty,sstx,nsteps,durcheck=Fals
         y=int(ssty[k])
         x=int(sstx[k])
         if (intensemean is not None) and (homemean is not None):
-            multiplier=np.exp(homemean-intensemean[y,x])
+            if np.less(homemean,0.001) or np.less(intensemean[y,x],0.001):
+                multiplier=1.0
+            else:
+                multiplier=np.exp(homemean-intensemean[y,x])
         else:
             multiplier=1.0        
         if durcheck==False:

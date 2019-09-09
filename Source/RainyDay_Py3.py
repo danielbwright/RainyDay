@@ -151,7 +151,8 @@ try:
         scenarioname='RainyDayAnalysis'
     fullpath=wd+'/'+scenarioname
     if os.path.isdir(fullpath)==False:
-        os.system('mkdir -p -v %s' %(fullpath))
+        #os.system('mkdir -p -v %s' %(fullpath))
+        os.mkdir(fullpath)
     os.chdir(wd)
 except ImportError:
     sys.exit("You did't specify MAINPATH, which is a required field!")
@@ -422,8 +423,11 @@ except Exception:
 diagpath=fullpath+'/Diagnostics/'
 if DoDiagnostics==True:     
     if os.path.isdir(wd+scenarioname+'/Diagnostics')==False:
-        os.system('mkdir %s' %(diagpath))
-
+        #os.system('mkdir %s' %(diagpath))
+        try:
+            os.mkdir(diagpath)
+        except:
+            pass
 #if DoDiagnostics and shpdom:
 #                import geopandas as gpd
 #                dshp = gpd.read_file(domainshp)
@@ -454,7 +458,8 @@ try:
         Scenarios=True
         FreqAnalysis=True
         WriteName=wd+'/'+scenarioname+'/Realizations'
-        os.system('mkdir %s' %(WriteName))
+        #os.system('mkdir %s' %(WriteName))
+        os.mkdir(WriteName)
         WriteName=WriteName+'/'+scenarioname
     elif Scenarios.lower()=='true' and areatype.lower()=="pointlist":
         print("You specified 'POINTAREA pointlist', but want rainfall scenario outputs. The 'pointlist option' does not support rainfall scenarios!")
@@ -735,7 +740,9 @@ if CreateCatalog and durcorrection:
     print('Since DURCORRECTION will be used and a storm catalog will be created, the duration of the catalog will be '+"{0:0.2f}".format(catduration)+' hours')
 elif CreateCatalog:
     catduration=duration
+   
     
+#sys.exit('decide what to do with duration correction and timeseparation!')
 try:
     timeseparation=np.float32(cardinfo[cardinfo[:,0]=="TIMESEPARATION",1][0])     
 except Exception:
@@ -836,7 +843,7 @@ if int(duration*60/rainprop.timeres)<=0:
     sys.exit("it appears that you specified a duration shorter than the temporal resolution of the input data!")
 
 
-if timeseparation<=0.:
+if timeseparation<=0. and durcorrection==False:
     timeseparation=duration
 elif timeseparation>0. and durcorrection==False:
     timeseparation=timeseparation+duration
@@ -997,7 +1004,7 @@ else:
 if catmask.shape!=domainmask.shape:
     sys.exit("Oh dear, 'catmask' and 'domainmask' aren't the same size!")
 
-if np.allclose(np.multiply(catmask,domainmask),0.):
+if np.allclose(np.multiply(catmask,domainmask),0.) and areatype.lower()!="pointlist":
     sys.exit("it looks as if the location specified in 'POINTAREA' is outside of the transposition domain!")
 
 # exclude points that are outside of the transposition domain:
@@ -1011,11 +1018,19 @@ elif areatype.lower()=="pointlist" and domain_type.lower()=='rectangular':
     for pt in np.arange(0,npoints_list):
         if ptlatlist[pt]>rainprop.subextent[3] or ptlatlist[pt]<rainprop.subextent[2] or ptlonlist[pt]>rainprop.subextent[1] or ptlonlist[pt]<rainprop.subextent[0]:
             keeppoints[pt]=False
+            
 
 if areatype.lower()=="pointlist":
-    yind_list=yind_list[keeppoints]
-    xind_list=xind_list[keeppoints]    
-    npoints_list=len(yind_list)    
+    if np.any(keeppoints)==False:
+        sys.exit("it looks as if none of the points in specified in 'POINTLIST' are inside the transposition domain!")
+    else:
+        yind_list=yind_list[keeppoints]
+        xind_list=xind_list[keeppoints] 
+        ptlatlist=ptlatlist[keeppoints]
+        ptlonlist=ptlonlist[keeppoints]
+        npoints_list=len(yind_list)   
+    
+        
 
 
 #################################################################################
@@ -1148,7 +1163,7 @@ catrain=catrain[includestorms,:]
 catmax=catmax[includestorms]
 catx=catx[includestorms]
 caty=caty[includestorms]
-cattime=cattime[includestorms,:]
+cattime=cattime[includestorms,:]    
 modstormsno=origstormsno[includestorms]  
 
 if nstorms<np.sum(includestorms==True):
@@ -1184,7 +1199,6 @@ if CreateCatalog==False:
     catx=catx[catinclude]
     caty=caty[catinclude]
     cattime=cattime[catinclude,:]
-    
     
     if defaultstorms:
         if nstorms_default<modstormsno.shape[0]:
@@ -1222,7 +1236,7 @@ if (durationcheck==False and durcorrection==False) or (durationcheck==False and 
             catx_subdur=np.zeros_like(catx)
             caty_subdur=np.zeros_like(caty)
             #catrain_subdur=catrain
-            #cattime_subdur=cattime
+            cattime_subdur=cattime
     
         temptime=np.empty((nstorms,int(duration*60/rainprop.timeres)),dtype='datetime64[m]')
         for i in range(0,nstorms):
@@ -1259,12 +1273,19 @@ if (durationcheck==False and durcorrection==False) or (durationcheck==False and 
         caty_subdur=caty_subdur[sind]
         catrain_subdur=catrain_subdur[sind,:]
         catmax_subdur=catmax_subdur[sind]/mnorm*rainprop.timeres/60.
-        if durcorrection==False:
+        
+        if durcorrection:
+            cattime=cattime[sind,:]
+            catx=catx[sind]
+            caty=caty[sind]
+            catrain=catrain[sind,:]
+            catmax=catmax[sind]
+        else:
             cattime=cattime_subdur
             catx=catx_subdur
             caty=caty_subdur
             catrain=catrain_subdur
-            catmax=catmax_subdur
+            catmax=catmax_subdur           
 
 
 #==============================================================================
@@ -1324,7 +1345,8 @@ elif transpotype=='kernel' or rescaletype!='none':
             transpokernel[np.less(pltkernel,phome)]=pltkernel[np.less(pltkernel,phome)]/phome
             transpokernel[np.greater(pltkernel,phome)]=phome/pltkernel[np.greater(pltkernel,phome)]
             transpokernel[np.equal(pltkernel,phome)]=1.0
-            transpokernel=sp.ndimage.filters.gaussian_filter(transpokernel, [3,3], mode='nearest')
+            transpokernel=RainyDay.mysmoother(transpokernel, [3,3])
+            #transpokernel=sp.ndimage.filters.gaussian_filter(transpokernel, [3,3], mode='nearest')
             transpokernel[np.equal(pltkernel,0.)]=0.
             rescaler=np.nansum(transpokernel)
             transpokernel=transpokernel/rescaler  
@@ -1340,7 +1362,8 @@ elif transpotype=='kernel' or rescaletype!='none':
         transpokernel[np.less(pltkernel,phome)]=pltkernel[np.less(pltkernel,phome)]/phome
         transpokernel[np.greater(pltkernel,phome)]=phome/pltkernel[np.greater(pltkernel,phome)]
         transpokernel[np.equal(pltkernel,phome)]=1.0
-        transpokernel=sp.ndimage.filters.gaussian_filter(transpokernel, [3,3], mode='nearest')
+        transpokernel=RainyDay.mysmoother(transpokernel, [3,3])
+        #transpokernel=sp.ndimage.filters.gaussian_filter(transpokernel, [3,3], mode='nearest')
         transpokernel[np.equal(pltkernel,0.)]=0.
         rescaler=np.nansum(transpokernel)
         transpokernel=transpokernel/rescaler  
@@ -1404,6 +1427,14 @@ if DoDiagnostics:
     print("     Creating storm probability map...")
     plot_kernel=np.column_stack([pltkernel,np.zeros((pltkernel.shape[0],catmask.shape[1]-pltkernel.shape[1]))])
     plot_kernel=np.row_stack([plot_kernel,np.zeros((catmask.shape[0]-pltkernel.shape[0],plot_kernel.shape[1]))])
+
+    #padleft=math.floor(maskwidth/2)
+    #padright=math.ceil(maskwidth/2)-1
+    #plot_kernel=np.column_stack([np.zeros((pltkernel.shape[0],padleft)),pltkernel,np.zeros((pltkernel.shape[0],padright))])
+
+    #padtop=math.floor(maskheight/2)
+    #padbottom=math.ceil(maskheight/2)-1
+    #plot_kernel=np.row_stack([np.zeros((padtop,pltkernel.shape[1])),pltkernel,np.zeros((padbottom,pltkernel.shape[1]))])
 
     fig = plt.figure()
     fig.set_size_inches(figsizex,figsizey)
@@ -1532,9 +1563,8 @@ if DoDiagnostics:
     if domain_type.lower()=="irregular" and shpdom:
         dmap.readshapefile(domainshp.split('.')[0],str(0),color="black")
 
-
     try:
-        os.system('rm '+diagpath+'Storm*.png')
+        os.remove(diagpath+'Storm*.png')
     except Exception:
         pass
             
@@ -1555,44 +1585,48 @@ if DoDiagnostics:
             ttl=plt.title('Storm '+str(i+1)+': '+str(cattime_subdur[i,-1])+'\nMax Rainfall:'+str(round(catmax_subdur[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty_subdur[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx_subdur[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}\nNote that the map is based on '+str(catduration)+'-hour rainfall')
         else:
             ttl=plt.title('Storm '+str(i+1)+': '+str(cattime[i,-1])+'\nMax Rainfall:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}')
-        plt.savefig(diagpath+'Storm'+str(i+1)+'_'+str(cattime[i,-1]).split('T')[0]+'.png',dpi=250) 
+        
+        if durcorrection:
+            plt.savefig(diagpath+'Storm'+str(i+1)+'_'+str(cattime_subdur[i,-1]).split('T')[0]+'.png',dpi=250)
+        else:
+            plt.savefig(diagpath+'Storm'+str(i+1)+'_'+str(cattime[i,-1]).split('T')[0]+'.png',dpi=250)
         cb.remove()
         ims.remove()
         sct.remove()
     plt.close()  
     
  
-    if areatype.lower()=="point":
-        aoi_ctr_lat=ptlat
-        aoi_ctr_lon=ptlon
-    elif areatype.lower()=="box":
-        aoi_ctr_lat=0.5*(boxarea[2]+boxarea[3])
-        aoi_ctr_lon=0.5*(boxarea[0]+boxarea[1])
-    elif areatype.lower()=="basin":
-        aoi_ctr_lat=0.5*(latrange[ymin]+latrange[ymax])
-        aoi_ctr_lon=0.5*(lonrange[xmin]+lonrange[xmax])
-        
-    distmat=RainyDay.latlondistance(aoi_ctr_lat,aoi_ctr_lon,ingridy,ingridx)/1000.
-    distmat[np.isclose(domainmask,0.)]=np.nan
-    
-    bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')    
-    bmap.drawcoastlines(linewidth=1.25)
-    bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
-    bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
-    ims=bmap.imshow(np.flipud(distmat),extent=rainprop.subextent, interpolation='none')
-    if rainprop.subdimensions[1]>rainprop.subdimensions[0]:
-        cb=fig.colorbar(ims,orientation='horizontal',pad=0.05,shrink=.8)
-    else:
-        cb=plt.colorbar()
-        cb.set_label('Distance from Area of Interest [km]')
-    plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
-    plt.scatter(aoi_ctr_lon,aoi_ctr_lat,color="red")
-    ttl=plt.title('Storm Locations and sizes (black dots)\nand distance from Area of Interest')
-    plt.savefig(diagpath+'DistancesFromAOI.png',dpi=250) 
+#    if areatype.lower()=="point":
+#        aoi_ctr_lat=ptlat
+#        aoi_ctr_lon=ptlon
+#    elif areatype.lower()=="box":
+#        aoi_ctr_lat=0.5*(boxarea[2]+boxarea[3])
+#        aoi_ctr_lon=0.5*(boxarea[0]+boxarea[1])
+#    elif areatype.lower()=="basin":
+#        aoi_ctr_lat=0.5*(latrange[ymin]+latrange[ymax])
+#        aoi_ctr_lon=0.5*(lonrange[xmin]+lonrange[xmax])
+#        
+#    distmat=RainyDay.latlondistance(aoi_ctr_lat,aoi_ctr_lon,ingridy,ingridx)/1000.
+#    distmat[np.isclose(domainmask,0.)]=np.nan
+#    
+#    bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')    
+#    bmap.drawcoastlines(linewidth=1.25)
+#    bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
+#    bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
+#    ims=bmap.imshow(np.flipud(distmat),extent=rainprop.subextent, interpolation='none')
+#    if rainprop.subdimensions[1]>rainprop.subdimensions[0]:
+#        cb=fig.colorbar(ims,orientation='horizontal',pad=0.05,shrink=.8)
+#    else:
+#        cb=plt.colorbar()
+#        cb.set_label('Distance from Area of Interest [km]')
+#    plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
+#    plt.scatter(aoi_ctr_lon,aoi_ctr_lat,color="red")
+#    ttl=plt.title('Storm Locations and sizes (black dots)\nand distance from Area of Interest')
+#    plt.savefig(diagpath+'DistancesFromAOI.png',dpi=250) 
        
-    plt.scatter(RainyDay.latlondistance(aoi_ctr_lat,aoi_ctr_lon,latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])/1000.,catmax)
-    plt.xlabel("Distance from Area of Interest [km]")
-    plt.ylabel("Storm total rainfall [mm]")
+    #plt.scatter(RainyDay.latlondistance(aoi_ctr_lat,aoi_ctr_lon,latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])/1000.,catmax)
+    #plt.xlabel("Distance from Area of Interest [km]")
+    #plt.ylabel("Storm total rainfall [mm]")
     
     
     
@@ -1718,7 +1752,7 @@ if FreqAnalysis:
         intenselon=intenselon[int_xmin:int_xmax]
         
         #intenserain[np.equal(intenserain,0.)]=np.nan
-        intenserain=intenserain[:int(intenserain.shape[0]*0.95)+1,:]
+        #intenserain=intenserain[:int(intenserain.shape[0]*0.95)+1,:]
 
         if np.array_equal(intenselat,latrange)==False or np.array_equal(intenselon,lonrange)==False:  
             intensegridx,intensengridy=np.meshgrid(intenselon,intenselat)        
@@ -1753,6 +1787,10 @@ if FreqAnalysis:
         intensemean=np.mean(intenserain,axis=0)
         intensestd=np.std(intenserain,axis=0) 
         
+        intensemean=RainyDay.mysmoother(intensemean)
+        intensestd=RainyDay.mysmoother(intensestd)
+        intensecorr=RainyDay.mysmoother(intensecorr)
+        
         # just in case you don't have any data to inform the rescaling:
         intensemean[np.isneginf(intensemean)]=homemean
         intensestd[np.isneginf(intensestd)]=0.
@@ -1762,7 +1800,7 @@ if FreqAnalysis:
         intensestd[np.isnan(intensestd)]=0.
         intensecorr[np.isnan(intensecorr)]=1.0
         
-    
+        
     # here is the main resampling and transposition loop
     for i in np.arange(0,nstorms):
         print('Resampling and transposing storm '+str(i+1)+' out of '+str(nstorms)+' ('"{0:0.0f}".format(100*(i+1)/nstorms)+'%)')
@@ -1781,8 +1819,10 @@ if FreqAnalysis:
 
         if transpotype=='uniform' and domain_type=='irregular':
             rndloc=np.random.randint(0,np.sum(np.equal(domainmask,True)),np.sum(whichstorms==i))
-            whichx[whichstorms==i,1]=xmask[rndloc]
-            whichy[whichstorms==i,1]=ymask[rndloc]
+            #whichx[whichstorms==i,1]=xmask[rndloc]
+            #whichy[whichstorms==i,1]=ymask[rndloc]
+            whichx[whichstorms==i]=xmask[rndloc].reshape((len(xmask[rndloc]), 1))
+            whichy[whichstorms==i]=ymask[rndloc].reshape((len(ymask[rndloc]), 1))
         
         # SET UP MANUAL PDF RESAMPLING
         elif transpotype=='manual':  
@@ -1838,6 +1878,7 @@ if FreqAnalysis:
                 else:
                     if (areatype.lower()=='pointlist' or areatype.lower()=='point') and rescaletype=='deterministic':
                         homemeanpt=intensemean[yind_list[pt],xind_list[pt]]
+                        #print(homemeanpt)
                         temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection,intensemean=intensemean,homemean=homemeanpt)
                         whichrain[whichstorms==i,pt]=temprain*rainprop.timeres/60./mnorm 
                     else:
@@ -2047,14 +2088,27 @@ if FreqAnalysis:
 
     if areatype.lower()=='pointlist':
         sortrain=sortrain/arfval
+        spreadmean=np.nanmean(sortrain,1)
+        
         if spreadtype=='ensemble':
             spreadmin=np.nanmin(sortrain,axis=1)
             spreadmax=np.nanmax(sortrain,axis=1)    
         else:
             spreadmin=np.percentile(sortrain,(100-quantilecalc)/2,axis=1)
             spreadmax=np.percentile(sortrain,quantilecalc+(100-quantilecalc)/2,axis=1)
-        outlat_line=np.append([-999.,-999.],ptlatlist)
-        freqanalysis_mean=np.column_stack((exceedp,returnperiod,RainyDay.mynanmean(sortrain,1)))
+        
+        if spreadmean.shape[0]!=returnperiod.shape[0] or spreadmax.shape[0]!=returnperiod.shape[0] or spreadmean.shape[1]!=ptlatlist.shape[0]:
+            sys.exit("There is some dimension inconsistency in the pointlist scheme!")
+        
+        #fmean=open(FreqFile_mean,'w')
+        #fmin=open(FreqFile_min,'w')
+        #fmax=open(FreqFile_max,'w')
+        
+        #fmean.write('#prob.exceed,returnperiod,meanrain\n'+ptlistname+'\n')
+        #fmax.write('#prob.exceed,returnperiod,maxrain\n'+ptlistname+'\n')
+        #fmin.write('#prob.exceed,returnperiod,minrain\n'+ptlistname+'\n')
+
+        freqanalysis_mean=np.column_stack((exceedp,returnperiod,spreadmean))
         freqanalysis_min=np.column_stack((exceedp,returnperiod,spreadmin))
         freqanalysis_max=np.column_stack((exceedp,returnperiod,spreadmax))
         
