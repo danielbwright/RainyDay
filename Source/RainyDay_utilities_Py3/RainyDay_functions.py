@@ -37,7 +37,7 @@ from scipy import stats
 from netCDF4 import Dataset, num2date, date2num
 #import gdal
 import rasterio
-
+import pandas as pd
 from numba import prange,jit
 
 from scipy.stats import norm
@@ -58,7 +58,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from numba.types import int32,int64,float32,uint32
-
+import linecache
 GEOG="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
 
 
@@ -233,6 +233,8 @@ def DistributionBuilderFast(intenserain,tempmax,xlen,ylen,checksep):
 
 @jit(fastmath=True)
 def SSTalt(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intensemean=None,intensestd=None,intensecorr=None,homemean=None,homestd=None,durcheck=False):
+    maxmultiplier=1.5
+    
     rainsum=np.zeros((len(sstx)),dtype='float32')
     nreals=len(rainsum)
     nsteps=passrain.shape[0]
@@ -243,7 +245,8 @@ def SSTalt(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intensemean=None,int
         domean=False
 
     if (intensestd is not None) and (intensecorr is not None) and (homestd is not None):
-        rquant=np.random.random_integers(5,high=95,size=nreals)/100.
+        #rquant=np.random.random_integers(5,high=95,size=nreals)/100.
+        rquant=np.random.random_sample(size=nreals)
         doall=True
     else:
         doall=False
@@ -267,14 +270,24 @@ def SSTalt(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intensemean=None,int
                 #sys.exit('need to fix short duration part')
                 muR=homemean-intensemean[y,x]
                 if doall:
-                    stdR=np.sqrt(homestd*homestd+intensestd[y,x]*intensestd[y,x]-2.*intensecorr[y,x]*homestd*intensestd[y,x])
-                    multiplier=sp.stats.lognorm.ppf(rquant[k],stdR,loc=0,scale=np.exp(muR))                    
+                    stdR=np.sqrt(np.power(homestd,2)+np.power(intensestd[y,x],2)-2.*intensecorr[y,x]*homestd*intensestd[y,x])
+                   # multiplier=sp.stats.lognorm.ppf(rquant[k],stdR,loc=0,scale=np.exp(muR))     
+                    #multiplier=10.
+                    #while multiplier>maxmultiplier:       # who knows what the right number is to use here...
+                    inverrf=sp.special.erfinv(2.*rquant-1.)
+                    multiplier=np.exp(muR+np.sqrt(2.*np.power(stdR,2))*inverrf[k])
+                    
+                    #multiplier=np.random.lognormal(muR,stdR)
+                    if multiplier>maxmultiplier:
+                        multiplier=1.    
                 else:
                     multiplier=np.exp(muR)
+                    if multiplier>maxmultiplier:
+                        multiplier=1.
             else:
                 multiplier=1.0
 #            print("still going!")
-            if multiplier>5.:
+            if multiplier>maxmultiplier:
                 sys.exit("Something seems to be going horribly wrong in the multiplier scheme!")
             else:
                 multiout[k]=multiplier
@@ -306,7 +319,7 @@ def numba_multimask_calc(passrain,trimmask,ssty,sstx,maskheight,maskwidth):
 
 
 @jit
-def SSTalt_singlecell(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intensemean=None,homemean=None,durcheck=False):
+def SSTalt_singlecell(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intensemean=None,intensestd=None,intensecorr=None,homemean=None,homestd=None,durcheck=False):
     rainsum=np.zeros((len(sstx)),dtype='float32')
     nreals=len(rainsum)
     nsteps=passrain.shape[0]
@@ -318,62 +331,67 @@ def SSTalt_singlecell(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intenseme
     else:
         domean=False       
 
+    if (intensestd is not None) and (intensecorr is not None) and (homestd is not None):
+        #rquant=np.random.random_integers(0,high=100,size=nreals)/100.
+        rquant=np.random.random_sample(size=nreals)
+        inverrf=sp.special.erfinv(2.*rquant-1.)
+        doall=True
+    else:
+        doall=False
+        #rquant=np.nan
 
     if durcheck==False:
         passrain=np.expand_dims(passrain,0)
         
-    if domean:
+    if domean and doall==False:
         rain,multi=killerloop_singlecell(passrain,rainsum,nreals,ssty,sstx,nsteps,durcheck=durcheck,intensemean=intensemean,homemean=homemean,multiout=multiout)
+        return rain,multi
+    elif domean and doall:
+        rain,multi=killerloop_singlecell(passrain,rainsum,nreals,ssty,sstx,nsteps,durcheck=durcheck,intensemean=intensemean,intensestd=intensestd,intensecorr=intensecorr,homemean=homemean,homestd=homestd,multiout=multiout,inverrf=inverrf)
         return rain,multi
     else:
         rain,_=killerloop_singlecell(passrain,rainsum,nreals,ssty,sstx,nsteps,durcheck=durcheck)
         return rain
     
-                #whichstep[k]=storestep
-#return rainsum,whichstep
-
-
-
-# this function below never worked for some unknown Numba problem-error messages indicated that it wasn't my fault!!! Some problem in tempsum
-#@jit(nopython=True,fastmath=True,parallel=True)
-#def killerloop(passrain,rainsum,nreals,ssty,sstx,maskheight,maskwidth,masktile,nsteps,durcheck):
-#    for k in prange(nreals):
-#        spanx=sstx[k]+maskwidth
-#        spany=ssty[k]+maskheight
-#        if np.all(np.less(passrain[:,ssty[k]:spany,sstx[k]:spanx],0.5)):
-#            rainsum[k]=0.
-#        else:
-#            if durcheck==False:
-#                #tempstep=np.multiply(passrain[:,ssty[k] : spany , sstx[k] : spanx],trimmask)
-#                #xnum=int64(sstx[k])
-#                #ynum=int64(ssty[k])
-#                #rainsum[k]=np.nansum(passrain[:,ssty[k], sstx[k]])
-#                rainsum[k]=np.nansum(np.multiply(passrain[:,ssty[k] : spany , sstx[k] : spanx],masktile))
-#            else:
-#                storesum=float32(0.)
-#                for kk in range(nsteps):
-#                    #tempsum=0.
-#                    #tempsum=np.multiply(passrain[kk,ssty[k]:spany,sstx[k]:spanx],masktile[0,:,:])
-#                    tempsum=np.nansum(np.multiply(passrain[kk,ssty[k]:spany,sstx[k]:spanx],masktile[0,:,:]))
-#    return rainsum
 
 
 @jit(nopython=True,fastmath=True,parallel=True)
-def killerloop_singlecell(passrain,rainsum,nreals,ssty,sstx,nsteps,durcheck=False,intensemean=None,homemean=None,multiout=None):
+def killerloop_singlecell(passrain,rainsum,nreals,ssty,sstx,nsteps,durcheck=False,intensemean=None,homemean=None,homestd=None,multiout=None,rquant=None,intensestd=None,intensecorr=None,inverrf=None):
+    maxmultiplier=1.5  # who knows what the right number is to use here...
     for k in prange(nreals):
         y=int(ssty[k])
         x=int(sstx[k])
-        if (intensemean is not None) and (homemean is not None):
+        if (intensemean is not None) and (homemean is not None) and (homestd is None):
             if np.less(homemean,0.001) or np.less(intensemean[y,x],0.001):
-                multiplier=1.0
+                multiplier=1.0           # or maybe this should be zero     
             else:
                 multiplier=np.exp(homemean-intensemean[y,x])
+                if multiplier>maxmultiplier:           
+                    multiplier=1.        # or maybe this should be zero
+        elif (intensemean is not None) and (homemean is not None) and (homestd is not None):
+            if np.less(homemean,0.001) or np.less(intensemean[y,x],0.001):
+                multiplier=1.0          # or maybe this should be zero
+            else:
+                #multiplier=np.exp(homemean-intensemean[y,x])
+                muR=homemean-intensemean[y,x]
+                stdR=np.sqrt(np.power(homestd,2)+np.power(intensestd[y,x],2)-2*intensecorr[y,x]*homestd*intensestd[y,x])
+                
+                #multiplier=10.
+                #while multiplier>maxmultiplier:       # who knows what the right number is to use here...
+                    #multiplier=np.random.lognormal(muR,stdR)
+                multiplier=np.exp(muR+np.sqrt(2.*np.power(stdR,2))*inverrf[k])
+                if multiplier>maxmultiplier:
+                    multiplier=1.        # or maybe this should be zero
         else:
-            multiplier=1.0        
+            multiplier=1.0  
+            
+        #if multiplier>2.:
+        #       sys.exit("Something seems to be going horribly wrong in the multiplier scheme!")
+                
         if durcheck==False:
             rainsum[k]=np.nansum(passrain[:,y, x])
         else:
-            storesum=float32(0.)
+            storesum=0.
             for kk in range(nsteps):
                 tempsum=passrain[kk,y,x]
                 if tempsum>storesum:
@@ -406,6 +424,36 @@ def killerloop_singlecell(passrain,rainsum,nreals,ssty,sstx,nsteps,durcheck=Fals
 #                        storesum=tempsum
 #                rainsum[k]=storesum
 #    return rainsum
+    
+    
+                    #whichstep[k]=storestep
+#return rainsum,whichstep
+
+
+
+# this function below never worked for some unknown Numba problem-error messages indicated that it wasn't my fault!!! Some problem in tempsum
+#@jit(nopython=True,fastmath=True,parallel=True)
+#def killerloop(passrain,rainsum,nreals,ssty,sstx,maskheight,maskwidth,masktile,nsteps,durcheck):
+#    for k in prange(nreals):
+#        spanx=sstx[k]+maskwidth
+#        spany=ssty[k]+maskheight
+#        if np.all(np.less(passrain[:,ssty[k]:spany,sstx[k]:spanx],0.5)):
+#            rainsum[k]=0.
+#        else:
+#            if durcheck==False:
+#                #tempstep=np.multiply(passrain[:,ssty[k] : spany , sstx[k] : spanx],trimmask)
+#                #xnum=int64(sstx[k])
+#                #ynum=int64(ssty[k])
+#                #rainsum[k]=np.nansum(passrain[:,ssty[k], sstx[k]])
+#                rainsum[k]=np.nansum(np.multiply(passrain[:,ssty[k] : spany , sstx[k] : spanx],masktile))
+#            else:
+#                storesum=float32(0.)
+#                for kk in range(nsteps):
+#                    #tempsum=0.
+#                    #tempsum=np.multiply(passrain[kk,ssty[k]:spany,sstx[k]:spanx],masktile[0,:,:])
+#                    tempsum=np.nansum(np.multiply(passrain[kk,ssty[k]:spany,sstx[k]:spanx],masktile[0,:,:]))
+#    return rainsum
+
 
 #==============================================================================
 # THIS VARIANT IS SIMPLER AND UNLIKE SSTWRITE, IT ACTUALLY WORKS RELIABLY!
@@ -1416,3 +1464,33 @@ def intense_corrloop(intenserain,intensecorr,homerain,xlen_wmask,ylen_wmask,mnor
         else:
             intensecorr[y,x]=np.nan
     return intensecorr
+
+
+#==============================================================================
+# read arcascii files
+#==============================================================================
+
+def read_arcascii(asciifile):
+    ncols=linecache.getline(asciifile, 1)
+    nrows=linecache.getline(asciifile, 2)
+    xllcorner=linecache.getline(asciifile, 3)
+    yllcorner=linecache.getline(asciifile, 4)
+    cellsize=linecache.getline(asciifile, 5)
+    nodata=linecache.getline(asciifile, 6)
+    
+    ncols=np.int(ncols.split('\n')[0].split(' ')[-1])
+    nrows=np.int(nrows.split('\n')[0].split(' ')[-1])
+    
+    xllcorner=np.float(xllcorner.split('\n')[0].split(' ')[-1])
+    yllcorner=np.float(yllcorner.split('\n')[0].split(' ')[-1])
+    
+    cellsize=np.float(cellsize.split('\n')[0].split(' ')[-1])
+    nodata=np.float(nodata.split('\n')[0].split(' ')[-1])
+    
+    #asciigrid = np.loadtxt(asciifile, skiprows=6)
+    asciigrid = np.array(pd.read_csv(asciifile, skiprows=6,delimiter=' ', header=None),dtype='float32')
+    
+    asciigrid[np.equal(asciigrid,nodata)]=np.nan
+    asciigrid=asciigrid/1000.*25.4
+
+    return asciigrid,ncols,nrows,xllcorner,yllcorner,cellsize

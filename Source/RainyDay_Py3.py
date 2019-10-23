@@ -279,8 +279,7 @@ try:
         transpotype='kernel'
         print("You selected the kernel density-based non-uniform storm transposition scheme!")
     elif transpotype.lower()=='uniform' and areatype.lower()=="pointlist":
-        transpotype='kernel'
-        print("You selected the spatially uniform storm transposition scheme and to perform IDF for a list of points. This is goofy, so we're switching the transposition scheme to nonuniform!")
+        print("You selected the spatially uniform storm transposition scheme and to perform IDF for a list of points. This is goofy, but lets go for it!")
     elif transpotype.lower()=='user':
         transpotype='user'
         sys.exit("sadly we aren't set up for the user-supplied transposition scheme yet")
@@ -304,7 +303,8 @@ try:
             rescaletype='stochastic'
             print("You selected stochastic ratio rescaling. This has not been thoroughly vetted. Be careful!")
             if areatype.lower()=='pointlist':
-                sys.exit("You selected 'pointlist' for POINTAREA. This is currently not compatible with stochastic rescaling.")
+                pass
+                #sys.exit("You selected 'pointlist' for POINTAREA. This is currently not compatible with stochastic rescaling.")
         if rescalingtype.lower()=='deterministic':
             rescaletype='deterministic'
             print("You selected deterministic ratio rescaling. This has not been thoroughly vetted. Be careful!")
@@ -314,6 +314,16 @@ try:
                 sys.exit("The rainfall file specified in 'RAINDISTRIBUTIONFILE' cannot be found!")
         except IndexError:
             sys.exit("Even though you 'ratio rescaling', you didn't specify the file of rainfall distributions!")  
+    elif rescalingtype.lower()=='dimensionless':
+        print("You selected 'dimensionless SST', modeled after Nathan et al. (2016). This has not been thoroughly vetted. Be careful!")
+        rescaletype='dimensionless'
+        try:
+            rescalingfile=cardinfo[cardinfo[:,0]=="RAINDISTRIBUTIONFILE",1][0]
+            if os.path.isfile(rescalingfile)==False:
+                sys.exit("The rainfall file specified in 'RAINDISTRIBUTIONFILE' cannot be found!")
+        except IndexError:
+            sys.exit("Even though you 'dimensionless SST', you didn't specify the file of rainfall distributions!")  
+
     else:
         print("No rescaling will be performed!")
 except Exception:
@@ -549,9 +559,9 @@ except Exception:
     FrequencySens=1.    
     pass
 
-if areatype=='point':
+if areatype=='point' or areatype=='pointlist':
     try:
-        ARFval=cardinfo[cardinfo[:,0]=="ARFVAL",1][0]     
+        ARFval=cardinfo[cardinfo[:,0]=="POINTADJUST",1][0]     
         if ARFval.lower()!='false':
             arfval=np.float(ARFval)
             
@@ -1334,6 +1344,7 @@ if transpotype=='uniform':
     cumkernel=tempmask
     cumkernel=np.expand_dims(cumkernel,2)        # do we need this???
 elif transpotype=='kernel' or rescaletype!='none':
+    smoothsig=5
     # the following is an important fix. All prior kernel-based results are conceptually incorrect-DBW 1/24/2018. But this hasn't been thoroughly vetted!
     if areatype.lower()=="pointlist":
         transpokernel=np.empty(pltkernel.shape,dtype='float64')
@@ -1345,7 +1356,7 @@ elif transpotype=='kernel' or rescaletype!='none':
             transpokernel[np.less(pltkernel,phome)]=pltkernel[np.less(pltkernel,phome)]/phome
             transpokernel[np.greater(pltkernel,phome)]=phome/pltkernel[np.greater(pltkernel,phome)]
             transpokernel[np.equal(pltkernel,phome)]=1.0
-            transpokernel=RainyDay.mysmoother(transpokernel, [3,3])
+            transpokernel=RainyDay.mysmoother(transpokernel,sigma=[smoothsig,smoothsig])
             #transpokernel=sp.ndimage.filters.gaussian_filter(transpokernel, [3,3], mode='nearest')
             transpokernel[np.equal(pltkernel,0.)]=0.
             rescaler=np.nansum(transpokernel)
@@ -1362,7 +1373,7 @@ elif transpotype=='kernel' or rescaletype!='none':
         transpokernel[np.less(pltkernel,phome)]=pltkernel[np.less(pltkernel,phome)]/phome
         transpokernel[np.greater(pltkernel,phome)]=phome/pltkernel[np.greater(pltkernel,phome)]
         transpokernel[np.equal(pltkernel,phome)]=1.0
-        transpokernel=RainyDay.mysmoother(transpokernel, [3,3])
+        transpokernel=RainyDay.mysmoother(transpokernel,sigma=[smoothsig,smoothsig])
         #transpokernel=sp.ndimage.filters.gaussian_filter(transpokernel, [3,3], mode='nearest')
         transpokernel[np.equal(pltkernel,0.)]=0.
         rescaler=np.nansum(transpokernel)
@@ -1729,16 +1740,20 @@ if FreqAnalysis:
         xmask=xmask[np.equal(domainmask,True)]
         ymask=ymask[np.equal(domainmask,True)]
         
-    if rescaletype=='stochastic' or rescaletype=='deterministic':
+    if rescaletype=='stochastic' or rescaletype=='deterministic' or rescaletype=='dimensionless':
         whichmultiplier=np.empty_like(whichrain)
+        whichmultiplier[:]=np.nan
 
-    
+        
     #==============================================================================
     # If you're using intensity-dependent resampling, get ready for it!
     #==============================================================================
 
 
-    if rescaletype!='none':
+    if rescaletype=='stochastic' or rescaletype=='deterministic':
+        smoothsig=5
+        
+        
         print("reading in rainfall intensity data...")
         intenserain,_,intenselat,intenselon=RainyDay.readintensityfile(rescalingfile)
         intensemask=np.equal(np.sum(intenserain,axis=0),0.)
@@ -1752,7 +1767,8 @@ if FreqAnalysis:
         intenselon=intenselon[int_xmin:int_xmax]
         
         #intenserain[np.equal(intenserain,0.)]=np.nan
-        #intenserain=intenserain[:int(intenserain.shape[0]*0.95)+1,:]
+        nintstorms=np.min((intenserain.shape[0],2*nyears))
+        intenserain=intenserain[-nintstorms:,:]
 
         if np.array_equal(intenselat,latrange)==False or np.array_equal(intenselon,lonrange)==False:  
             intensegridx,intensengridy=np.meshgrid(intenselon,intenselat)        
@@ -1771,7 +1787,7 @@ if FreqAnalysis:
         # the stochastic multiplier approach uses the log of the rainfall:
         intenserain=np.log(intenserain)
 
-        homerain=np.nansum(np.multiply(intenserain,catmask),axis=(1,2))/mnorm
+        hometemp=np.nansum(np.multiply(intenserain,catmask),axis=(1,2))/mnorm
         xlen_wmask=rainprop.subdimensions[1]-maskwidth+1
         ylen_wmask=rainprop.subdimensions[0]-maskheight+1
         
@@ -1780,16 +1796,19 @@ if FreqAnalysis:
             tempintense=np.empty((intenserain.shape[0],ylen_wmask,xlen_wmask),dtype='float32')
             intenserain=RainyDay.intenseloop(intenserain,tempintense,xlen_wmask,ylen_wmask,maskheight,maskwidth,trimmask,mnorm,domainmask)
         intensecorr=np.empty((ylen_wmask,xlen_wmask),dtype='float32')    
-        intensecorr=RainyDay.intense_corrloop(intenserain,intensecorr,homerain,xlen_wmask,ylen_wmask,mnorm,domainmask)
+        intensecorr=RainyDay.intense_corrloop(intenserain,intensecorr,hometemp,xlen_wmask,ylen_wmask,mnorm,domainmask)
             
-        homemean=np.mean(homerain)
-        homestd=np.std(homerain)
+        #homemean=np.mean(homerain)
+        #homestd=np.std(homerain)
         intensemean=np.mean(intenserain,axis=0)
         intensestd=np.std(intenserain,axis=0) 
         
-        intensemean=RainyDay.mysmoother(intensemean)
-        intensestd=RainyDay.mysmoother(intensestd)
-        intensecorr=RainyDay.mysmoother(intensecorr)
+        intensemean=RainyDay.mysmoother(intensemean,sigma=[smoothsig,smoothsig])
+        intensestd=RainyDay.mysmoother(intensestd,sigma=[smoothsig,smoothsig])
+        intensecorr=RainyDay.mysmoother(intensecorr,sigma=[smoothsig,smoothsig])
+        
+        homemean=np.nansum(np.multiply(intensemean,catmask),axis=(0,1))/mnorm
+        homestd=np.nansum(np.multiply(intensestd,catmask),axis=(0,1))/mnorm
         
         # just in case you don't have any data to inform the rescaling:
         intensemean[np.isneginf(intensemean)]=homemean
@@ -1800,7 +1819,35 @@ if FreqAnalysis:
         intensestd[np.isnan(intensestd)]=0.
         intensecorr[np.isnan(intensecorr)]=1.0
         
+    elif rescaletype=='dimensionless':
+        print("reading in rainfall map for dimensionless SST...")
+        if '.nc' in rescalingfile:
+            sys.exit('need to set this up')
+            #intenserain,_,intenselat,intenselon=RainyDay.readintensityfile(rescalingfile)
+        elif '.asc' in rescalingfile:
+            asciigrid,ncols,nrows,xllcorner,yllcorner,cellsize=RainyDay.read_arcascii(rescalingfile)
+            dlsstarea=[xllcorner,xllcorner+ncols*cellsize,yllcorner,yllcorner+nrows*cellsize]
+            atlasgridx,atlasgridy=np.meshgrid(np.arange(dlsstarea[0],dlsstarea[1]-0.001,cellsize),np.arange(dlsstarea[3],dlsstarea[2]+0.001,-cellsize))
+            atlas14_domain=np.column_stack((atlasgridx.flatten(),atlasgridy.flatten())) 
         
+            delaunay=sp.spatial.qhull.Delaunay(atlas14_domain)
+            interp=sp.interpolate.LinearNDInterpolator(delaunay,asciigrid.flatten(),fill_value=np.nan)
+            
+            grid_out=np.column_stack((ingridx.flatten(),ingridy.flatten())) 
+            atlas_regridded=np.reshape(interp(grid_out),ingridx.shape) 
+            atlas_regridded=np.log(atlas_regridded)
+            hometemp=np.nansum(np.multiply(atlas_regridded,catmask))/mnorm
+            atlas_regridded[np.isnan(atlas_regridded)]=hometemp
+            
+            #plt.imshow(atlas_regridded/hometemp)
+            #plt.colorbar()
+   
+        else:
+            sys.exit('Unrecognized file format provided for dimensionless SST')   
+    else:
+        pass
+        
+   
     # here is the main resampling and transposition loop
     for i in np.arange(0,nstorms):
         print('Resampling and transposing storm '+str(i+1)+' out of '+str(nstorms)+' ('"{0:0.0f}".format(100*(i+1)/nstorms)+'%)')
@@ -1867,23 +1914,67 @@ if FreqAnalysis:
                 binctr=binctr+1
         else:
             for pt in np.arange(0,whichx.shape[3]):
-                if rescaletype=='stochastic' and areatype.lower()!='pointlist':                    
+                if rescaletype=='stochastic' and areatype.lower()!='pointlist' and areatype.lower!='point':                    
                     temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,intensemean=intensemean,intensestd=intensestd,intensecorr=intensecorr,homemean=homemean,homestd=homestd,durcheck=durcorrection)
                     whichrain[whichstorms==i,pt]=temprain*rainprop.timeres/60./mnorm    
-                elif rescaletype=='deterministic' and areatype.lower()!='pointlist':
+                elif rescaletype=='deterministic' and areatype.lower()!='pointlist' and areatype.lower()!='point':
                     temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,intensemean=intensemean,homemean=homemean,durcheck=durcorrection)
                     whichrain[whichstorms==i,pt]=temprain*rainprop.timeres/60./mnorm 
-                elif areatype.lower()!='pointlist':
+                elif areatype.lower()!='pointlist' and areatype.lower()!='point' and rescaletype=='none':
                     whichrain[whichstorms==i,pt]=RainyDay.SSTalt(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection)*rainprop.timeres/60./mnorm                    
-                else:
-                    if (areatype.lower()=='pointlist' or areatype.lower()=='point') and rescaletype=='deterministic':
-                        homemeanpt=intensemean[yind_list[pt],xind_list[pt]]
-                        #print(homemeanpt)
-                        temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection,intensemean=intensemean,homemean=homemeanpt)
+                elif areatype.lower()=='pointlist':
+                        if rescaletype=='deterministic':
+                            homemeanpt=intensemean[yind_list[pt],xind_list[pt]]
+                            temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection,intensemean=intensemean,homemean=homemeanpt)
+                        elif rescaletype=='dimensionless':
+                            homemeanpt=atlas_regridded[yind_list[pt],xind_list[pt]]
+                            temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection,intensemean=atlas_regridded,homemean=homemeanpt)
+                        elif rescaletype=='stochastic':
+                            homemeanpt=intensemean[yind_list[pt],xind_list[pt]]
+                            homestdpt=intensestd[yind_list[pt],xind_list[pt]]
+                             
+                            intensemeanpt=np.mean(intenserain,axis=0)
+                            intensestdpt=np.std(intenserain,axis=0) 
+                            
+                            intensemeanpt=RainyDay.mysmoother(intensemeanpt,sigma=[smoothsig,smoothsig])
+                            intensestdpt=RainyDay.mysmoother(intensestdpt,sigma=[smoothsig,smoothsig])
+                             
+                            intensecorrpt=np.empty((ylen_wmask,xlen_wmask),dtype='float32')    
+                            intensecorrpt=RainyDay.intense_corrloop(intenserain,intensecorrpt,intenserain[:,yind_list[pt],xind_list[pt]],xlen_wmask,ylen_wmask,mnorm,domainmask)    
+                            intensecorrpt=RainyDay.mysmoother(intensecorrpt,sigma=[smoothsig,smoothsig])
+                             
+                            intensecorrpt[np.isneginf(intensecorrpt)]=1.0
+                        
+                            intensemeanpt[np.isnan(intensemeanpt)]=homemeanpt
+                            intensestdpt[np.isnan(intensestdpt)]=0.
+                            intensecorrpt[np.isnan(intensecorrpt)]=1.0
+                            temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,intensemean=intensemeanpt,intensestd=intensestdpt,intensecorr=intensecorrpt,homemean=homemeanpt,homestd=homestdpt,durcheck=durcorrection)
+                       
                         whichrain[whichstorms==i,pt]=temprain*rainprop.timeres/60./mnorm 
-                    else:
-                        whichrain[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection)*rainprop.timeres/60./mnorm
+                elif areatype.lower()=='point':
+                        if rescaletype=='deterministic':
+                            homemeanpt=intensemean[ymin,xmin]
+                            temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection,intensemean=intensemean,homemean=homemeanpt)
+                        elif rescaletype=='dimensionless':
+                            homemeanpt=atlas_regridded[ymin,xmin]
+                            temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection,intensemean=atlas_regridded,homemean=homemeanpt)
+                        elif rescaletype=='stochastic':
+                            homemeanpt=intensemean[ymin,xmin]
+                            homestdpt=intensemean[ymin,xmin]
+                            temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,intensemean=intensemean,intensestd=intensestd,intensecorr=intensecorr,homemean=homemeanpt,homestd=homestdpt,durcheck=durcorrection)
+                        else:
+                            whichrain[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection)*rainprop.timeres/60./mnorm
 
+                        whichrain[whichstorms==i,pt]=temprain*rainprop.timeres/60./mnorm 
+                    
+    
+    if areatype.lower()=='pointlist' or areatype.lower()=='point':
+        if arfval==1.:
+            sortrain=whichrain*arfval
+        else:
+            arfrand=np.random.exponential(arfval-1.,size=whichrain.shape)+1.
+            arfrand[arfrand>1.5]=1.0
+            whichrain=np.multiply(whichrain,arfrand)
     
     #sys.exit("need to propagate whichmultiplier")
     
@@ -1894,6 +1985,7 @@ if FreqAnalysis:
         #    sortmultiplier=np.empty((whichrain.shape[1],whichrain.shape[2],npoints_list),dtype='float32')
         for pt in np.arange(0,whichx.shape[3]):
             maxrain=np.nanmax(whichrain[:,:,:,pt],axis=0)
+            #maxpds=np.nanmax(whichrain[:,:,:,pt],axis=0)
             
             
             # HERE THE OPTIONAL USER SPECIFIED INTENSITY DISTRIBUTION IS APPLIED    
@@ -1944,6 +2036,9 @@ if FreqAnalysis:
                 
     else:
         maxrain=np.nanmax(whichrain[:,:,:,pt],axis=0)
+        temppds=np.squeeze(whichrain)
+        maxpds=np.sort(temppds.reshape(-1, temppds.shape[-1]),axis=0)[-nsimulations:,:]
+        
         
         # HERE THE OPTIONAL USER SPECIFIED INTENSITY DISTRIBUTION IS APPLIED    
         if userdistr.all()!=False:
@@ -1960,7 +2055,7 @@ if FreqAnalysis:
         if rotation:
             maxangles=np.empty((maxind.shape),dtype="float32")
             sortangle=np.empty((maxind.shape),dtype="float32")
-        if rescaletype=='stochastic' or rescaletype=='deterministic':
+        if rescaletype=='stochastic' or rescaletype=='deterministic' or rescaletype=='dimensionless':
             maxmultiplier=np.empty((maxind.shape),dtype="float32") 
             sortmultiplier=np.empty((maxind.shape),dtype="float32")
             
@@ -1971,13 +2066,15 @@ if FreqAnalysis:
             maxstorm[maxind==i]=np.squeeze(whichstorms[i,np.squeeze(maxind==i)])
             if rotation:
                 maxangles[maxind==i]=randangle[i,maxind==i]
-            if rescaletype=='stochastic' or rescaletype=='deterministic':
+            if rescaletype=='stochastic' or rescaletype=='deterministic' or rescaletype=='dimensionless':
                 maxmultiplier[maxind==i]=whichmultiplier[i,maxind==i]
         
         
         # RANK THE STORMS BY INTENSITY AND ASSIGN RETURN PERIODS
         exceedp=np.linspace(1,1./nsimulations,nsimulations)
         returnperiod=1/exceedp
+        rp_pds=1./(1.-np.exp(-1./(returnperiod)))
+        #rp_pds=1./np.log(returnperiod/(returnperiod-1))
         sortind=np.argsort(maxrain,axis=0)
         sortrain=np.sort(maxrain,axis=0)
         sortx=np.empty((maxind.shape),dtype="int32")
@@ -1991,7 +2088,7 @@ if FreqAnalysis:
             sortstorms[:,i]=maxstorm[sortind[:,i],i]
             if rotation:
                 sortangle[:,i]=maxangles[sortind[:,i],i]
-            if rescaletype=='stochastic' or rescaletype=='deterministic':
+            if rescaletype=='stochastic' or rescaletype=='deterministic' or rescaletype=='dimensionless':
                 sortmultiplier[:,i]=maxmultiplier[sortind[:,i],i]
         
             
@@ -2022,7 +2119,7 @@ if FreqAnalysis:
             whichorigstorm=whichorigstorm[reducedlevind,:]
             if rotation:    
                 sortangle=sortangle[reducedlevind,:]
-            if rescaletype=='stochastic' or rescaletype=='deterministic':        
+            if rescaletype=='stochastic' or rescaletype=='deterministic' or rescaletype=='dimensionless':        
                 sortmultiplier=sortmultiplier[reducedlevind,:]
         
     
@@ -2086,8 +2183,11 @@ if FreqAnalysis:
     
     print("preparing frequency analysis...")
 
+
+            
+            
     if areatype.lower()=='pointlist':
-        sortrain=sortrain/arfval
+         
         spreadmean=np.nanmean(sortrain,1)
         
         if spreadtype=='ensemble':
@@ -2124,7 +2224,6 @@ if FreqAnalysis:
         np.savetxt(FreqFile_max,freqanalysis_max,delimiter=',',header='prob.exceed,returnperiod,maxrain',fmt='%6.3f',comments='#',footer=ptlistname)
         
     else:
-        sortrain=sortrain/arfval
         if spreadtype=='ensemble':
             spreadmin=np.nanmin(sortrain,axis=1)
             spreadmax=np.nanmax(sortrain,axis=1)    
@@ -2132,7 +2231,7 @@ if FreqAnalysis:
             spreadmin=np.percentile(sortrain,(100-quantilecalc)/2,axis=1)
             spreadmax=np.percentile(sortrain,quantilecalc+(100-quantilecalc)/2,axis=1)
     
-        freqanalysis=np.column_stack((exceedp,returnperiod,spreadmin,RainyDay.mynanmean(sortrain,1),spreadmax))
+        freqanalysis=np.column_stack((exceedp,returnperiod,spreadmin,np.nanmean(sortrain,1),spreadmax))
         
         np.savetxt(FreqFile,freqanalysis,delimiter=',',header='prob.exceed,returnperiod,minrain,meanrain,maxrain',fmt='%6.3f',comments='')
         
@@ -2143,7 +2242,7 @@ if FreqAnalysis:
         fontP = FontProperties()
         fontP.set_size('xx-small')
         fig, ax = plt.subplots(1)
-        line1, = plt.plot(exceedp[exceedp<=0.5], RainyDay.mynanmean(sortrain,1)[exceedp<=0.5], lw=1, label='Average', color='blue')
+        line1, = plt.plot(exceedp[exceedp<=0.5], RainyDay.np.nanmean(sortrain,1)[exceedp<=0.5], lw=1, label='Average', color='blue')
     
         ax.fill_between(exceedp[exceedp<=0.5], spreadmin[exceedp<=0.5], spreadmax[exceedp<=0.5], facecolor='dodgerblue', alpha=0.5,label='Ensemble Variability')
         blue_patch = mpatches.Patch(color='dodgerblue', label='Spread')
@@ -2249,7 +2348,7 @@ if FreqAnalysis:
             if rotation:
                 writeangle=sortangle[minind:,:]
                 binwriteang=np.digitize(writeangle.ravel(),angbins).reshape(writeangle.shape)
-            if rescaletype=='stochastic' or rescaletype=='deterministic':
+            if rescaletype=='stochastic' or rescaletype=='deterministic' or rescaletype=='dimensionless':
                 writemultiplier=sortmultiplier[minind:,:]
         else:
             writemax=sortrain
@@ -2262,7 +2361,7 @@ if FreqAnalysis:
             if rotation:
                 writeangle=sortangle
                 binwriteang=np.digitize(writeangle.ravel(),angbins).reshape(writeangle.shape)
-            if rescaletype=='stochastic' or rescaletype=='deterministic':
+            if rescaletype=='stochastic' or rescaletype=='deterministic' or rescaletype=='dimensionless':
                 writemultiplier=sortmultiplier
     
         for rlz in range(0,nrealizations):
@@ -2280,7 +2379,7 @@ if FreqAnalysis:
                 else:
                     outrain=RainyDay.SSTspin_write_v2(catrain,writex[:,rlz],writey[:,rlz],writestorm[:,rlz],nanmask,maskheight,maskwidth,precat,cattime[:,-1],rainprop,rlzanglebin=binwriteang[:,rlz],delarray=delarray,spin=prependrain,flexspin=False,samptype=transpotype,cumkernel=cumkernel,rotation=rotation,domaintype=domain_type)
             else:
-                if rescaletype=='stochastic' or rescaletype=='deterministic':
+                if rescaletype=='stochastic' or rescaletype=='deterministic' or rescaletype=='dimensionless':
                     outrain=RainyDay.SSTspin_write_v2(catrain,np.squeeze(writex[:,rlz]),np.squeeze(writey[:,rlz]),np.squeeze(writestorm[:,rlz]),nanmask,maskheight,maskwidth,precat,cattime[:,-1],rainprop,spin=prependrain,flexspin=False,samptype=transpotype,cumkernel=cumkernel,rotation=rotation,domaintype=domain_type)
                     for rl in range(0,outrain.shape[0]):
                         outrain[rl,tlen:,:]=outrain[rl,tlen:,:]*writemultiplier[rl,rlz,0]
