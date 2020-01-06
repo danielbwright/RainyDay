@@ -563,7 +563,11 @@ if areatype=='point' or areatype=='pointlist':
     try:
         ARFval=cardinfo[cardinfo[:,0]=="POINTADJUST",1][0]     
         if ARFval.lower()!='false':
-            arfval=np.float(ARFval)
+            if ',' in ARFval:
+                
+                arfval=np.array(ARFval.split(','),dtype='float32')
+            else:
+                arfval=np.array(np.float(ARFval))
             
         else:
             FrequencySens=1.
@@ -572,6 +576,21 @@ if areatype=='point' or areatype=='pointlist':
         pass
 else:
     arfval=1.
+
+try:    
+    CalcType=cardinfo[cardinfo[:,0]=="CALCTYPE",1][0]
+    if CalcType.lower()=='ams' or CalcType.lower()=='annmax':
+        calctype='ams'
+        print("You've selected to use Annual Maxima Series.")
+    elif CalcType.lower()=='pds' or CalcType.lower()=='partialduration':
+        calctype='pds'
+        print("You've selected to use Partial Duration Series.")
+    else:
+        print("Unrecognized entry for CALCTYPE. Defaulting to Annual Maxima Series.")
+except Exception:
+    calctype='ams'
+    print("Nothing provided for CALCTYPE. Defaulting to Annual Maxima Series.")
+
 
 try:    
     userdistr=cardinfo[cardinfo[:,0]=="INTENSDISTR",1][0]
@@ -585,6 +604,9 @@ try:
 except Exception:
     userdistr=np.zeros((1),dtype='bool')
     pass
+
+if calctype=='pds' and Scenarios:
+    sys.exit("Unfortunately, RainyDay currently only allows Partial Duration Series for rainfall frequency analysis, not for scenario writing. You can change CALCTYPE to 'AMS' and try again.")
     
  
 if Scenarios:
@@ -1969,10 +1991,13 @@ if FreqAnalysis:
                     
     
     if areatype.lower()=='pointlist' or areatype.lower()=='point':
-        if arfval==1.:
+        if len(arfval)==1 and arfval[0]==1.:
             sortrain=whichrain*arfval
         else:
-            arfrand=np.random.exponential(arfval-1.,size=whichrain.shape)+1.
+            if len(arfval)==1:
+                arfrand=np.random.exponential(arfval[0]-1.,size=whichrain.shape)+1.
+            elif len(arfval)==2:
+                arfrand=np.random.gamma(shape=arfval[0],scale=arfval[1],size=whichrain.shape)
             arfrand[arfrand>1.5]=1.0
             whichrain=np.multiply(whichrain,arfrand)
     
@@ -1984,8 +2009,19 @@ if FreqAnalysis:
         #if rescaletype=='stochastic' or rescaletype=='deterministic':
         #    sortmultiplier=np.empty((whichrain.shape[1],whichrain.shape[2],npoints_list),dtype='float32')
         for pt in np.arange(0,whichx.shape[3]):
-            maxrain=np.nanmax(whichrain[:,:,:,pt],axis=0)
-            #maxpds=np.nanmax(whichrain[:,:,:,pt],axis=0)
+            
+            if calctype.lower()=='ams':
+                maxrain=np.nanmax(whichrain[:,:,:,pt],axis=0)
+                
+                
+            elif calctype.lower()=='pds':
+                temprain=np.squeeze(whichrain[:,:,:,pt])
+                temppds=temprain.reshape(-1, temprain.shape[-1])
+                maxrain=np.sort(temppds,axis=0)[-nsimulations:,:]
+            
+            
+            # PULL OUT THE CORRESPONDING TRANSPOSITION INFORMATION
+            maxind=np.nanargmax(whichrain[:,:,:,pt],axis=0)
             
             
             # HERE THE OPTIONAL USER SPECIFIED INTENSITY DISTRIBUTION IS APPLIED    
@@ -1993,8 +2029,7 @@ if FreqAnalysis:
                 rvs=sp.stats.genextreme.rvs(userdistr[2],loc=userdistr[0],scale=userdistr[1],size=maxrain.shape).astype('float32')
                 maxrain=maxrain*rvs
                 
-            # PULL OUT THE CORRESPONDING TRANSPOSITION INFORMATION
-            maxind=np.nanargmax(whichrain[:,:,:,pt],axis=0)
+            
             
             # THIS ISN'T VERY ELEGANT
             maxx=np.empty((maxind.shape),dtype="int32")
@@ -2035,9 +2070,15 @@ if FreqAnalysis:
             exceedp=exceedp[reducedlevind]
                 
     else:
-        maxrain=np.nanmax(whichrain[:,:,:,pt],axis=0)
-        temppds=np.squeeze(whichrain)
-        maxpds=np.sort(temppds.reshape(-1, temppds.shape[-1]),axis=0)[-nsimulations:,:]
+        if calctype.lower()=='ams':
+            maxrain=np.nanmax(whichrain[:,:,:,pt],axis=0)
+            
+        elif calctype.lower()=='pds':
+            temprain=np.squeeze(whichrain)
+            temppds=temprain.reshape(-1, temprain.shape[-1])
+            maxrain=np.sort(temppds,axis=0)[-nsimulations:,:]
+        
+        maxind=np.nanargmax(whichrain,axis=0)
         
         
         # HERE THE OPTIONAL USER SPECIFIED INTENSITY DISTRIBUTION IS APPLIED    
@@ -2046,7 +2087,7 @@ if FreqAnalysis:
             maxrain=maxrain*rvs
             
         # PULL OUT THE CORRESPONDING TRANSPOSITION INFORMATION
-        maxind=np.nanargmax(whichrain,axis=0)
+        
         
         # THIS ISN'T VERY ELEGANT
         maxx=np.empty((maxind.shape),dtype="int32")
@@ -2067,13 +2108,13 @@ if FreqAnalysis:
             if rotation:
                 maxangles[maxind==i]=randangle[i,maxind==i]
             if rescaletype=='stochastic' or rescaletype=='deterministic' or rescaletype=='dimensionless':
-                maxmultiplier[maxind==i]=whichmultiplier[i,maxind==i]
+                maxmultiplier[maxind==i]=np.squeeze(whichmultiplier[i,maxind==i])
         
         
         # RANK THE STORMS BY INTENSITY AND ASSIGN RETURN PERIODS
         exceedp=np.linspace(1,1./nsimulations,nsimulations)
         returnperiod=1/exceedp
-        rp_pds=1./(1.-np.exp(-1./(returnperiod)))
+        #rp_pds=1./(1.-np.exp(-1./(returnperiod)))
         #rp_pds=1./np.log(returnperiod/(returnperiod-1))
         sortind=np.argsort(maxrain,axis=0)
         sortrain=np.sort(maxrain,axis=0)
@@ -2184,7 +2225,6 @@ if FreqAnalysis:
     print("preparing frequency analysis...")
 
 
-            
             
     if areatype.lower()=='pointlist':
          
