@@ -469,8 +469,9 @@ try:
         FreqAnalysis=True
         WriteName=wd+'/'+scenarioname+'/Realizations'
         #os.system('mkdir %s' %(WriteName))
-        os.mkdir(WriteName)
         WriteName=WriteName+'/'+scenarioname
+        if os.path.isdir(WriteName)==False:
+            os.mkdir(WriteName)
     elif Scenarios.lower()=='true' and areatype.lower()=="pointlist":
         print("You specified 'POINTAREA pointlist', but want rainfall scenario outputs. The 'pointlist option' does not support rainfall scenarios!")
         Scenarios=False
@@ -1875,8 +1876,8 @@ if FreqAnalysis:
         print('Resampling and transposing storm '+str(i+1)+' out of '+str(nstorms)+' ('"{0:0.0f}".format(100*(i+1)/nstorms)+'%)')
         # UNIFORM RESAMPLING
         if transpotype=='uniform' and domain_type=='rectangular':
-            whichx[whichstorms==i]=np.random.randint(0,np.int(rainprop.subdimensions[1])-maskwidth+1,len(whichx[whichstorms==i]))
-            whichy[whichstorms==i]=np.random.randint(0,np.int(rainprop.subdimensions[0])-maskheight+1,len(whichy[whichstorms==i]))
+            whichx[whichstorms==i,0]=np.random.randint(0,np.int(rainprop.subdimensions[1])-maskwidth+1,len(whichx[whichstorms==i]))
+            whichy[whichstorms==i,0]=np.random.randint(0,np.int(rainprop.subdimensions[0])-maskheight+1,len(whichy[whichstorms==i]))
      
         # KERNEL-BASED AND INTENSITY-BASED RESAMPLING (ALSO NEEDED FOR IRREGULAR TRANSPOSITION DOMAINS)
         elif transpotype=='kernel':
@@ -1890,8 +1891,8 @@ if FreqAnalysis:
             rndloc=np.random.randint(0,np.sum(np.equal(domainmask,True)),np.sum(whichstorms==i))
             #whichx[whichstorms==i,1]=xmask[rndloc]
             #whichy[whichstorms==i,1]=ymask[rndloc]
-            whichx[whichstorms==i]=xmask[rndloc].reshape((len(xmask[rndloc]), 1))
-            whichy[whichstorms==i]=ymask[rndloc].reshape((len(ymask[rndloc]), 1))
+            whichx[whichstorms==i,0]=xmask[rndloc].reshape((len(xmask[rndloc]), 1))
+            whichy[whichstorms==i,0]=ymask[rndloc].reshape((len(ymask[rndloc]), 1))
         
         # SET UP MANUAL PDF RESAMPLING
         elif transpotype=='manual':  
