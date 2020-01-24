@@ -1250,7 +1250,7 @@ catrain=catrain*IntensitySens
 
 durationcheck=60./rainprop.timeres*duration==np.float(catrain.shape[1])
 
-if (durationcheck==False and durcorrection==False) or (durationcheck==False and DoDiagnostics):   
+if (durationcheck==False and durcorrection==True) or (durationcheck==False and DoDiagnostics):   
     print("checking storm catalog duration, and adjusting if needed...")
     
     # if you are using a catalog that is longer in duration than your desired analysis, this happens:
@@ -1264,17 +1264,23 @@ if (durationcheck==False and durcorrection==False) or (durationcheck==False and 
         dur_j=0
         temprain=np.zeros((nstorms,int(duration*60/rainprop.timeres),rainprop.subdimensions[0],rainprop.subdimensions[1]),dtype='float32')
         rainsum=np.zeros((rainprop.subdimensions[0]-maskheight+1,rainprop.subdimensions[1]-maskwidth+1),dtype='float32')
-        if durcorrection:
-            catmax_subdur=np.zeros_like(catmax)
-            catx_subdur=np.zeros_like(catx)
-            caty_subdur=np.zeros_like(caty)
-            #catrain_subdur=catrain
-            cattime_subdur=cattime
-    
+
+        # I think the following commented block was wrong, but haven't fully tested the change-DBW 1/24/2020
+#        if durcorrection:
+#            catmax_subdur=np.zeros_like(catmax)
+#            catx_subdur=np.zeros_like(catx)
+#            caty_subdur=np.zeros_like(caty)
+#            cattime_subdur=cattime
+        
+        catmax_subdur=np.zeros_like(catmax)
+        catx_subdur=np.zeros_like(catx)
+        caty_subdur=np.zeros_like(caty)
+        cattime_subdur=cattime
+
         temptime=np.empty((nstorms,int(duration*60/rainprop.timeres)),dtype='datetime64[m]')
         for i in range(0,nstorms):
-            if (100*((i+1)%(nstorms/10)))==0:
-                print('adjusting duration of storms, '+str(100*(i+1)/nstorms)+'% complete...')
+            #if (100*((i+1)%(nstorms//10)))==0:
+            print('adjusting duration of storms, '+"{0:0.0f}".format(100*(i+1)/nstorms)+'% complete...')
             dur_max=0.
             for j in range(0,catrain.shape[1]-int(duration*60/rainprop.timeres)):
                 maxpass=np.nansum(catrain[i,j:j+int(duration*60./rainprop.timeres),:],axis=0)
@@ -1307,7 +1313,7 @@ if (durationcheck==False and durcorrection==False) or (durationcheck==False and 
         catrain_subdur=catrain_subdur[sind,:]
         catmax_subdur=catmax_subdur[sind]/mnorm*rainprop.timeres/60.
         
-        if durcorrection:
+        if durcorrection==False:
             cattime=cattime[sind,:]
             catx=catx[sind]
             caty=caty[sind]
