@@ -1788,9 +1788,11 @@ if FreqAnalysis:
         intensemask=np.equal(np.sum(intenserain,axis=0),0.)
         intenserain[:,intensemask]=np.nan
         int_xmin=np.abs(intenselon-rainprop.bndbox[0]).argmin()
-        int_xmax=np.abs(intenselon-rainprop.bndbox[1]).argmin()+1
-        int_ymax=np.abs(intenselat-rainprop.bndbox[2]).argmin()+1
         int_ymin=np.abs(intenselat-rainprop.bndbox[3]).argmin()
+        int_xmax=np.abs(intenselon-rainprop.bndbox[1]).argmin()
+        int_ymax=np.abs(intenselat-rainprop.bndbox[2]).argmin()
+        #int_xmax=np.abs(intenselon-rainprop.bndbox[1]).argmin()+1
+        #int_ymax=np.abs(intenselat-rainprop.bndbox[2]).argmin()+1
         intenserain=intenserain[:,int_ymin:int_ymax,int_xmin:int_xmax]
         intenselat=intenselat[int_ymin:int_ymax]
         intenselon=intenselon[int_xmin:int_xmax]
@@ -1815,10 +1817,10 @@ if FreqAnalysis:
 
         # the stochastic multiplier approach uses the log of the rainfall:
         intenserain=np.log(intenserain)
-
         hometemp=np.nansum(np.multiply(intenserain,catmask),axis=(1,2))/mnorm
         xlen_wmask=rainprop.subdimensions[1]-maskwidth+1
         ylen_wmask=rainprop.subdimensions[0]-maskheight+1
+                
         
         # there is some goofy numba stuff below...
         if maskheight>1 or maskwidth>1:
@@ -1836,8 +1838,12 @@ if FreqAnalysis:
         intensestd=RainyDay.mysmoother(intensestd,sigma=[smoothsig,smoothsig])
         intensecorr=RainyDay.mysmoother(intensecorr,sigma=[smoothsig,smoothsig])
         
-        homemean=np.nansum(np.multiply(intensemean,catmask),axis=(0,1))/mnorm
-        homestd=np.nansum(np.multiply(intensestd,catmask),axis=(0,1))/mnorm
+        if maskheight>1 or maskwidth>1:
+            homemean=np.nansum(np.multiply(intensemean,catmask[:-maskheight+1,:-maskwidth+1]),axis=(0,1))/mnorm
+            homestd=np.nansum(np.multiply(intensestd,catmask[:-maskheight+1,:-maskwidth+1]),axis=(0,1))/mnorm        
+        else:    
+            homemean=np.nansum(np.multiply(intensemean,catmask),axis=(0,1))/mnorm
+            homestd=np.nansum(np.multiply(intensestd,catmask),axis=(0,1))/mnorm
         
         # just in case you don't have any data to inform the rescaling:
         intensemean[np.isneginf(intensemean)]=homemean
