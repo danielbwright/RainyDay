@@ -1929,8 +1929,8 @@ if FreqAnalysis:
             rndloc=np.random.randint(0,np.sum(np.equal(domainmask,True)),np.sum(whichstorms==i))
             #whichx[whichstorms==i,1]=xmask[rndloc]
             #whichy[whichstorms==i,1]=ymask[rndloc]
-            whichx[whichstorms==i,0]=xmask[rndloc].reshape((len(xmask[rndloc]), 1))
-            whichy[whichstorms==i,0]=ymask[rndloc].reshape((len(ymask[rndloc]), 1))
+            whichx[whichstorms==i,0]=xmask[rndloc].reshape(len(xmask[rndloc]))
+            whichy[whichstorms==i,0]=ymask[rndloc].reshape(len(ymask[rndloc]))
         
         # SET UP MANUAL PDF RESAMPLING
         elif transpotype=='manual':  
