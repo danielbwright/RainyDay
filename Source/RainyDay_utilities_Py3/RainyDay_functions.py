@@ -314,7 +314,7 @@ def SSTalt(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intensemean=None,int
 @jit(nopython=True,fastmath=True,parallel=True)
 def numba_multimask_calc(passrain,trimmask,ssty,sstx,maskheight,maskwidth):
     train=np.multiply(passrain[ssty : ssty+maskheight , sstx : sstx+maskwidth],trimmask)
-    rainsum=np.sum(np.multiply(train,trimmask))       
+    rainsum=np.sum(train)       
     return rainsum
 
 

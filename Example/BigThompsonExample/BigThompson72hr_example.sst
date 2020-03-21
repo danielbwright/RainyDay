@@ -19,7 +19,7 @@ DURATION		72													# STORM DURATION IN HOURS
 DURATIONCORRECTION false		
 NYEARS			500											# HOW MANY YEARS OF RAINFALL SHOULD BE GENERATED
 NSTORMS			350
-NREALIZATIONS	3														# HOW MANY REPLICATIONS/REALIZATIONS DO YOU WANT?
+NREALIZATIONS	1														# HOW MANY REPLICATIONS/REALIZATIONS DO YOU WANT?
 TIMESEPARATION	12														# MINIMUM TIME SEPARATION BETWEEN STORMS IN CATALOG IN HOURS
 DOMAINTYPE		irregular												# "irregular" or "rectangular"
 #DOMAINSHP		/Users/daniel/Google_Drive/RainyDay2/RainyDayGit/Example/BigThompsonExample/BigThompsonSSTdomain-polygon.shp
@@ -41,9 +41,9 @@ RESAMPLING		poisson													# HOW WILL THE STORM COUNTS BE SYNTHESIZED FOR E
 RETURNLEVELS	2,5,10,25,50,100,200,500
 RETURNTHRESHOLD	1
 ROTATIONANGLE	false
-RESCALING		deterministic    # false, deterministic, or stochastic
+RESCALING		false    # false, deterministic, or stochastic
 RAINDISTRIBUTIONFILE	/Users/daniel/Google_Drive/RainyDay2/PRISM_Top50storms_Daily_domain_basinscale.nc
-NPERYEAR	5
+NPERYEAR	false
 
 
 # WHAT KIND OF SHAPE ARE WE SAMPLING FOR? OPTIONS ARE:

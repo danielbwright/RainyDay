@@ -2011,22 +2011,25 @@ if FreqAnalysis:
                             intensecorrpt[np.isnan(intensecorrpt)]=1.0
                             temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,intensemean=intensemeanpt,intensestd=intensestdpt,intensecorr=intensecorrpt,homemean=homemeanpt,homestd=homestdpt,durcheck=durcorrection)
                        
-                        whichrain[whichstorms==i,pt]=temprain*rainprop.timeres/60./mnorm 
+                        whichrain[whichstorms==i,pt]=temprain*rainprop.timeres/60.
                 elif areatype.lower()=='point':
                         if rescaletype=='deterministic':
                             homemeanpt=intensemean[ymin,xmin]
                             temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection,intensemean=intensemean,homemean=homemeanpt)
+                            whichrain[whichstorms==i,pt]=temprain*rainprop.timeres/60.
                         elif rescaletype=='dimensionless':
                             homemeanpt=atlas_regridded[ymin,xmin]
                             temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection,intensemean=atlas_regridded,homemean=homemeanpt)
+                            whichrain[whichstorms==i,pt]=temprain*rainprop.timeres/60.
                         elif rescaletype=='stochastic':
                             homemeanpt=intensemean[ymin,xmin]
                             homestdpt=intensemean[ymin,xmin]
                             temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,intensemean=intensemean,intensestd=intensestd,intensecorr=intensecorr,homemean=homemeanpt,homestd=homestdpt,durcheck=durcorrection)
+                            whichrain[whichstorms==i,pt]=temprain*rainprop.timeres/60. 
                         else:
-                            whichrain[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection)*rainprop.timeres/60./mnorm
+                            whichrain[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection)*rainprop.timeres/60.
 
-                        whichrain[whichstorms==i,pt]=temprain*rainprop.timeres/60./mnorm 
+                        
                     
     
     if areatype.lower()=='pointlist' or areatype.lower()=='point':
