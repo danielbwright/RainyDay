@@ -163,7 +163,8 @@ try:
     catalogname=str(cardinfo[cardinfo[:,0]=="CATALOGNAME",1][0])
 except Exception:
     catalogname='SSTstormcatalog.nc'
-catalogname=wd+'/'+catalogname
+if catalogname.find('/')==-1:
+    catalogname=wd+'/'+catalogname
 
 try:
     CreateCatalog=cardinfo[cardinfo[:,0]=="CREATECATALOG",1][0]
@@ -279,7 +280,7 @@ try:
         transpotype='kernel'
         print("You selected the kernel density-based non-uniform storm transposition scheme!")
     elif transpotype.lower()=='uniform' and areatype.lower()=="pointlist":
-        print("You selected the spatially uniform storm transposition scheme and to perform IDF for a list of points. This is goofy, but lets go for it!")
+        print("You selected the spatially uniform storm transposition scheme and to perform IDF for a list of points!")
     elif transpotype.lower()=='user':
         transpotype='user'
         sys.exit("sadly we aren't set up for the user-supplied transposition scheme yet")
@@ -292,7 +293,7 @@ except Exception:
     transpotype='uniform'
     print("You didn't specify 'TRANSPOSITION', defaulting to spatially uniform scheme!")
  
-    
+
 # Use stochastic or deterministic ratio multiplier?
 rescaletype='none'
 try:
@@ -308,6 +309,7 @@ try:
         if rescalingtype.lower()=='deterministic':
             rescaletype='deterministic'
             print("You selected deterministic ratio rescaling. This has not been thoroughly vetted. Be careful!")
+        
         try:
             rescalingfile=cardinfo[cardinfo[:,0]=="RAINDISTRIBUTIONFILE",1][0]
             if os.path.isfile(rescalingfile)==False:
@@ -322,8 +324,7 @@ try:
             if os.path.isfile(rescalingfile)==False:
                 sys.exit("The rainfall file specified in 'RAINDISTRIBUTIONFILE' cannot be found!")
         except IndexError:
-            sys.exit("Even though you 'dimensionless SST', you didn't specify the file of rainfall distributions!")  
-
+            sys.exit("Even though you 'dimensionless SST', you didn't specify the file of rainfall distributions!")      
     else:
         print("No rescaling will be performed!")
 except Exception:
@@ -338,7 +339,7 @@ try:
         deterministic=False
 except Exception:
     deterministic=False
-
+    
 try:
     domain_type=cardinfo[cardinfo[:,0]=="DOMAINTYPE",1][0] 
 except Exception:
@@ -572,15 +573,15 @@ if areatype=='point' or areatype=='pointlist':
                 
                 arfval=np.array(ARFval.split(','),dtype='float32')
             else:
-                arfval=np.array(np.float(ARFval))
+                arfval=np.array([np.float(ARFval)])
             
         else:
             FrequencySens=1.
     except Exception:
-        arfval=1.    
+        arfval=np.array([1.])    
         pass
 else:
-    arfval=1.
+    arfval=np.array([1.])
 
 try:    
     CalcType=cardinfo[cardinfo[:,0]=="CALCTYPE",1][0]
@@ -673,11 +674,11 @@ try:
                 int(spread)
             except:
                 print('unrecognized value for UNCERTAINTY.')
-                
             if int(spread)>=0 and int(spread)<=100:
                 spreadtype='quantile'
                 quantilecalc=int(spread)
-                print(spread+'th quantiles will be calculated for rainfall frequency analysis...')
+                printcalc=(100-quantilecalc)//2
+                print(str(printcalc)+'th-'+str(quantilecalc+printcalc)+'th interquantile range will be calculated for rainfall frequency analysis...')
             else: 
                 sys.exit('invalid quantile range for frequency analysis...')
     else:
@@ -1272,81 +1273,69 @@ catrain=catrain*IntensitySens
 
 durationcheck=60./rainprop.timeres*duration==np.float(catrain.shape[1])
 
-if (durationcheck==False and durcorrection==True) or (durationcheck==False and DoDiagnostics):   
+#if (durationcheck==False and durcorrection==True) or (durationcheck==False and DoDiagnostics): 
+if (durationcheck==False and durcorrection==False): 
     print("checking storm catalog duration, and adjusting if needed...")
     
     # if you are using a catalog that is longer in duration than your desired analysis, this happens:
-    if durationcheck==False:
-        print("Storm catalog duration is longer than the specified duration, finding max rainfall periods for specified duration...")
-    
-        # the first run through trims the storm catalog duration to the desired duration, for diagnostic purposes if needed...       
-        dur_maxind=np.array((nstorms),dtype='int32')
-        dur_x=0
-        dur_y=0
-        dur_j=0
-        temprain=np.zeros((nstorms,int(duration*60/rainprop.timeres),rainprop.subdimensions[0],rainprop.subdimensions[1]),dtype='float32')
-        rainsum=np.zeros((rainprop.subdimensions[0]-maskheight+1,rainprop.subdimensions[1]-maskwidth+1),dtype='float32')
+    print("Storm catalog duration is longer than the specified duration, finding max rainfall periods for specified duration...")
 
-        # I think the following commented block was wrong, but haven't fully tested the change-DBW 1/24/2020
+    # the first run through trims the storm catalog duration to the desired duration, for diagnostic purposes if needed...       
+    dur_maxind=np.array((nstorms),dtype='int32')
+    dur_x=0
+    dur_y=0
+    dur_j=0
+    temprain=np.zeros((nstorms,int(duration*60/rainprop.timeres),rainprop.subdimensions[0],rainprop.subdimensions[1]),dtype='float32')
+    rainsum=np.zeros((rainprop.subdimensions[0]-maskheight+1,rainprop.subdimensions[1]-maskwidth+1),dtype='float32')
+
+    # I think the following commented block was wrong, but haven't fully tested the change-DBW 1/24/2020
 #        if durcorrection:
 #            catmax_subdur=np.zeros_like(catmax)
 #            catx_subdur=np.zeros_like(catx)
 #            caty_subdur=np.zeros_like(caty)
 #            cattime_subdur=cattime
-        
-        catmax_subdur=np.zeros_like(catmax)
-        catx_subdur=np.zeros_like(catx)
-        caty_subdur=np.zeros_like(caty)
-        cattime_subdur=cattime
-
-        temptime=np.empty((nstorms,int(duration*60/rainprop.timeres)),dtype='datetime64[m]')
-        for i in range(0,nstorms):
-            #if (100*((i+1)%(nstorms//10)))==0:
-            print('adjusting duration of storms, '+"{0:0.0f}".format(100*(i+1)/nstorms)+'% complete...')
-            dur_max=0.
-            for j in range(0,catrain.shape[1]-int(duration*60/rainprop.timeres)):
-                maxpass=np.nansum(catrain[i,j:j+int(duration*60./rainprop.timeres),:],axis=0)
-                
-                if domain_type.lower()=='irregular':
-                    maxtemp,tempy,tempx=RainyDay.catalogNumba_irregular(maxpass,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask)   
-                else:
-                    maxtemp,tempy,tempx=RainyDay.catalogNumba(maxpass,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)                       
- 
-                if maxtemp>dur_max:
-                    dur_max=maxtemp
-                    dur_x=tempx
-                    dur_y=tempy
-                    dur_j=j
-
-            catmax_subdur[i]=dur_max
-            catx_subdur[i]=dur_x
-            caty_subdur[i]=dur_y  
-
-            temprain[i,:]=catrain[i,dur_j:dur_j+int(duration*60./rainprop.timeres),:]
-            temptime[i,:]=cattime[i,dur_j:dur_j+int(duration*60./rainprop.timeres)]
-        
-        catrain_subdur=temprain
-        cattime_subdur=temptime
     
-        sind=np.argsort(catmax_subdur)
-        cattime_subdur=cattime_subdur[sind,:]
-        catx_subdur=catx_subdur[sind]
-        caty_subdur=caty_subdur[sind]
-        catrain_subdur=catrain_subdur[sind,:]
-        catmax_subdur=catmax_subdur[sind]/mnorm*rainprop.timeres/60.
-        
-        if durcorrection==False:
-            cattime=cattime[sind,:]
-            catx=catx[sind]
-            caty=caty[sind]
-            catrain=catrain[sind,:]
-            catmax=catmax[sind]
-        else:
-            cattime=cattime_subdur
-            catx=catx_subdur
-            caty=caty_subdur
-            catrain=catrain_subdur
-            catmax=catmax_subdur           
+    catmax_subdur=np.zeros_like(catmax)
+    catx_subdur=np.zeros_like(catx)
+    caty_subdur=np.zeros_like(caty)
+    cattime_subdur=cattime
+
+    temptime=np.empty((nstorms,int(duration*60/rainprop.timeres)),dtype='datetime64[m]')
+    for i in range(0,nstorms):
+        #if (100*((i+1)%(nstorms//10)))==0:
+        print('adjusting duration of storms, '+"{0:0.0f}".format(100*(i+1)/nstorms)+'% complete...')
+        dur_max=0.
+        for j in range(0,catrain.shape[1]-int(duration*60/rainprop.timeres)):
+            maxpass=np.nansum(catrain[i,j:j+int(duration*60./rainprop.timeres),:],axis=0)
+            
+            if domain_type.lower()=='irregular':
+                maxtemp,tempy,tempx=RainyDay.catalogNumba_irregular(maxpass,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask)   
+            else:
+                maxtemp,tempy,tempx=RainyDay.catalogNumba(maxpass,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)                       
+ 
+            if maxtemp>dur_max:
+                dur_max=maxtemp
+                dur_x=tempx
+                dur_y=tempy
+                dur_j=j
+
+        catmax_subdur[i]=dur_max
+        catx_subdur[i]=dur_x
+        caty_subdur[i]=dur_y  
+
+        temprain[i,:]=catrain[i,dur_j:dur_j+int(duration*60./rainprop.timeres),:]
+        temptime[i,:]=cattime[i,dur_j:dur_j+int(duration*60./rainprop.timeres)]
+    
+    catrain_subdur=temprain
+    cattime_subdur=temptime
+
+    sind=np.argsort(catmax_subdur)
+    
+    cattime=cattime_subdur[sind,:]
+    catx=catx_subdur[sind]
+    caty=caty_subdur[sind]
+    catrain=catrain_subdur[sind,:]
+    catmax=catmax_subdur[sind]/mnorm*rainprop.timeres/60.        
 
 
 #==============================================================================
@@ -1596,7 +1585,25 @@ if DoDiagnostics:
     plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
     plt.savefig(diagpath+'StdDevStormRain.png',dpi=250)
     plt.close()
-
+    
+    
+    # PLOT CATALOG CDF/PDF
+    print ("     Creating storm catalog PDF and CDF...")
+    fig = plt.figure()
+    ax  = fig.add_subplot(111)
+    fig.set_size_inches(6,4)
+    n, bins, patches = ax.hist(catmax, nstorms, density=True, histtype='stepfilled',cumulative=True, label='Empirical',color='lightgray')
+    ax.annotate('Largest Storm: '+"{0:0.1f}".format(np.nanmax(catmax))+" mm\n"+str(cattime[-1,-1]), xy=(np.nanmax(catmax), 1),  xycoords='data',
+            xytext=(0.75, 0.75), textcoords='axes fraction',
+            arrowprops=dict(facecolor='black', shrink=0.05),
+            horizontalalignment='right', verticalalignment='top',
+            )
+    ax.set_title('CDF of '+str(nstorms)+' Storm Catalog Entries')
+    ax.set_xlabel('Storm Total Rainfall [mm]')
+    ax.set_ylabel('Nonexceedance Probability [-]')
+    plt.savefig(diagpath+'StormCatalogCDF.png',dpi=250)
+    plt.close()
+    
     
     # PLOT EACH STORM
     print ("     Creating storm rainfall maps (this could take a while)...")
@@ -1643,85 +1650,19 @@ if DoDiagnostics:
             cb=plt.colorbar()
         cb.set_label('Total Rainfall [mm]')
         sct=bmap.scatter(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=10,facecolors='none',edgecolors='r',alpha=0.5)
-        if durcorrection:
-            ttl=plt.title('Storm '+str(i+1)+': '+str(cattime_subdur[i,-1])+'\nMax Rainfall:'+str(round(catmax_subdur[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty_subdur[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx_subdur[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}\nNote that the map is based on '+str(catduration)+'-hour rainfall')
-        else:
-            ttl=plt.title('Storm '+str(i+1)+': '+str(cattime[i,-1])+'\nMax Rainfall:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}')
+        #if durcorrection:
+        #    ttl=plt.title('Storm '+str(i+1)+': '+str(cattime[i,-1])+'\nMax Rainfall:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}\nNote that the map is based on '+str(catduration)+'-hour rainfall')
+        #else:
+        #    ttl=plt.title('Storm '+str(i+1)+': '+str(cattime[i,-1])+'\nMax Rainfall:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}')
+        ttl=plt.title('Storm '+str(i+1)+': '+str(cattime[i,-1])+'\nMax Rainfall:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}')
         
-        if durcorrection:
-            plt.savefig(diagpath+'Storm'+str(i+1)+'_'+str(cattime_subdur[i,-1]).split('T')[0]+'.png',dpi=250)
-        else:
-            plt.savefig(diagpath+'Storm'+str(i+1)+'_'+str(cattime[i,-1]).split('T')[0]+'.png',dpi=250)
+    
+        plt.savefig(diagpath+'Storm'+str(i+1)+'_'+str(cattime[i,-1]).split('T')[0]+'.png',dpi=250)
         cb.remove()
         ims.remove()
         sct.remove()
     plt.close()  
-    
- 
-#    if areatype.lower()=="point":
-#        aoi_ctr_lat=ptlat
-#        aoi_ctr_lon=ptlon
-#    elif areatype.lower()=="box":
-#        aoi_ctr_lat=0.5*(boxarea[2]+boxarea[3])
-#        aoi_ctr_lon=0.5*(boxarea[0]+boxarea[1])
-#    elif areatype.lower()=="basin":
-#        aoi_ctr_lat=0.5*(latrange[ymin]+latrange[ymax])
-#        aoi_ctr_lon=0.5*(lonrange[xmin]+lonrange[xmax])
-#        
-#    distmat=RainyDay.latlondistance(aoi_ctr_lat,aoi_ctr_lon,ingridy,ingridx)/1000.
-#    distmat[np.isclose(domainmask,0.)]=np.nan
-#    
-#    bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')    
-#    bmap.drawcoastlines(linewidth=1.25)
-#    bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
-#    bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
-#    ims=bmap.imshow(np.flipud(distmat),extent=rainprop.subextent, interpolation='none')
-#    if rainprop.subdimensions[1]>rainprop.subdimensions[0]:
-#        cb=fig.colorbar(ims,orientation='horizontal',pad=0.05,shrink=.8)
-#    else:
-#        cb=plt.colorbar()
-#        cb.set_label('Distance from Area of Interest [km]')
-#    plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
-#    plt.scatter(aoi_ctr_lon,aoi_ctr_lat,color="red")
-#    ttl=plt.title('Storm Locations and sizes (black dots)\nand distance from Area of Interest')
-#    plt.savefig(diagpath+'DistancesFromAOI.png',dpi=250) 
-       
-    #plt.scatter(RainyDay.latlondistance(aoi_ctr_lat,aoi_ctr_lon,latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])/1000.,catmax)
-    #plt.xlabel("Distance from Area of Interest [km]")
-    #plt.ylabel("Storm total rainfall [mm]")
-    
-    
-    
-#    labels=np.zeros_like(distmat,dtype='bool')
-#    labels[domainmask==True]=True
-#    outdomain=np.zeros_like(distmat,dtype='float32')
-#    outdomain[np.isnan(distmat)]=np.nan
-#    latmid=ingridy[ymin,xmin]
-#    lonmid=ingridx[ymin,xmin]
-#    distarray=RainyDay.latlondistance(aoi_ctr_lat,aoi_ctr_lon,ingridy,ingridx)
-#    distarray[labels==False]=np.nan
-#    gridarea=RainyDay.latlondistance(latmid,lonmid,latmid+res,lonmid)*RainyDay.latlondistance(latmid,lonmid,latmid,lonmid+res)
-#    domarea=gridarea*np.nansum(domainmask)
-#    area=0.
-#    while np.less_equal(area,domarea) and np.all(labels==False)==False:
-#        mindist_ind=np.unravel_index(np.nanargmin(distarray), distarray.shape)
-#        if labels[mindist_ind[0],mindist_ind[1]]:
-#            print("Processing "+str(area/1000./1000.)+" out of "+str(domarea/1000./1000.)+" km^2")
-#            latmid=latrange[mindist_ind[0]]
-#            lonmid=lonrange[mindist_ind[1]]
-#            area=area+gridarea
-#            outdomain[mindist_ind[0],mindist_ind[1]]=area/1000./1000.
-#            #area=area+latlondistance(latmid,lonmid,latmid+res,lonmid)*latlondistance(latmid,lonmid,latmid,lonmid+res)
-#        labels[mindist_ind[0],mindist_ind[1]]=False
-#        distarray[mindist_ind[0],mindist_ind[1]]=np.nan
-#
-#        
-#plt.imshow(outdomain)
-#plt.colorbar()   
-#    
-#plt.scatter(outdomain[caty,catx],catmax)
-#plt.xlabel("Size of Transposition Domain [km^2]")
-#plt.ylabel("Storm total rainfall [mm]")
+   
 
 #==============================================================================
 # STEP 2 (OPTIONAL): STORM TRANSPOSITION
@@ -1808,7 +1749,6 @@ if FreqAnalysis:
     if rescaletype=='stochastic' or rescaletype=='deterministic':
         smoothsig=5
         
-        
         print("reading in rainfall intensity data...")
         intenserain,_,intenselat,intenselon=RainyDay.readintensityfile(rescalingfile)
         intensemask=np.equal(np.sum(intenserain,axis=0),0.)
@@ -1888,7 +1828,7 @@ if FreqAnalysis:
         elif '.asc' in rescalingfile:
             asciigrid,ncols,nrows,xllcorner,yllcorner,cellsize=RainyDay.read_arcascii(rescalingfile)
             dlsstarea=[xllcorner,xllcorner+ncols*cellsize,yllcorner,yllcorner+nrows*cellsize]
-            atlasgridx,atlasgridy=np.meshgrid(np.arange(dlsstarea[0],dlsstarea[1]-0.001,cellsize),np.arange(dlsstarea[3],dlsstarea[2]+0.001,-cellsize))
+            atlasgridx,atlasgridy=np.meshgrid(np.arange(dlsstarea[0],dlsstarea[1]+cellsize/10.,cellsize),np.arange(dlsstarea[3],dlsstarea[2]+cellsize/10.,-cellsize))
             atlas14_domain=np.column_stack((atlasgridx.flatten(),atlasgridy.flatten())) 
         
             delaunay=sp.spatial.qhull.Delaunay(atlas14_domain)
@@ -1899,9 +1839,6 @@ if FreqAnalysis:
             atlas_regridded=np.log(atlas_regridded)
             hometemp=np.nansum(np.multiply(atlas_regridded,catmask))/mnorm
             atlas_regridded[np.isnan(atlas_regridded)]=hometemp
-            
-            #plt.imshow(atlas_regridded/hometemp)
-            #plt.colorbar()
    
         else:
             sys.exit('Unrecognized file format provided for dimensionless SST')   
@@ -1927,10 +1864,9 @@ if FreqAnalysis:
 
         if transpotype=='uniform' and domain_type=='irregular':
             rndloc=np.random.randint(0,np.sum(np.equal(domainmask,True)),np.sum(whichstorms==i))
-            #whichx[whichstorms==i,1]=xmask[rndloc]
-            #whichy[whichstorms==i,1]=ymask[rndloc]
-            whichx[whichstorms==i,0]=xmask[rndloc].reshape(len(xmask[rndloc]))
-            whichy[whichstorms==i,0]=ymask[rndloc].reshape(len(ymask[rndloc]))
+            for pt in np.arange(0,whichx.shape[3]):
+                whichx[whichstorms==i,pt]=xmask[rndloc].reshape(len(xmask[rndloc]))
+                whichy[whichstorms==i,pt]=ymask[rndloc].reshape(len(ymask[rndloc]))
         
         # SET UP MANUAL PDF RESAMPLING
         elif transpotype=='manual':  
@@ -2010,6 +1946,10 @@ if FreqAnalysis:
                             intensestdpt[np.isnan(intensestdpt)]=0.
                             intensecorrpt[np.isnan(intensecorrpt)]=1.0
                             temprain,whichmultiplier[whichstorms==i,pt]=RainyDay.SSTalt_singlecell(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,intensemean=intensemeanpt,intensestd=intensestdpt,intensecorr=intensecorrpt,homemean=homemeanpt,homestd=homestdpt,durcheck=durcorrection)
+                        else:
+                            temprain=RainyDay.SSTalt(passrain,whichx[whichstorms==i,pt],whichy[whichstorms==i,pt],trimmask,maskheight,maskwidth,durcheck=durcorrection)
+                            whichrain[whichstorms==i,pt]=temprain*rainprop.timeres/60./mnorm    
+   
                        
                         whichrain[whichstorms==i,pt]=temprain*rainprop.timeres/60.
                 elif areatype.lower()=='point':
@@ -2033,7 +1973,7 @@ if FreqAnalysis:
                     
     
     if areatype.lower()=='pointlist' or areatype.lower()=='point':
-        if len(arfval)==1 and arfval[0]==1.:
+        if len(arfval)==1 and np.isclose(arfval[0],1.):
             sortrain=whichrain*arfval
         else:
             if len(arfval)==1:

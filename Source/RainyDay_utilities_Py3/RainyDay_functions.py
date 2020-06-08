@@ -1168,7 +1168,7 @@ def readmeanfile(rfile,inbounds=False):
     return outrain,outlat,outlon
 
 
-def writedomain(domain,mainpath,latrange,lonrange):
+def writedomain(domain,mainpath,latrange,lonrange,parameterfile):
     # SAVE outrain AS NETCDF FILE
     dataset=Dataset(mainpath, 'w', format='NETCDF4')
 
@@ -1193,6 +1193,11 @@ def writedomain(domain,mainpath,latrange,lonrange):
     latitudes[:]=latrange
     longitudes[:]=lonrange
     domainmap[:]=domain
+    
+    with open(parameterfile, "r") as myfile:
+        params=myfile.read()
+    myfile.close
+    dataset.description=params
     
     dataset.close()
 
