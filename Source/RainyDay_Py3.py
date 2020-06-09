@@ -36,6 +36,7 @@ from copy import deepcopy
 from scipy import ndimage, stats
 import pandas as pd
 from mpl_toolkits.basemap import Basemap
+import glob
 
 #from numba import njit, prange
 numbacheck=True
@@ -1606,7 +1607,7 @@ if DoDiagnostics:
     
     
     # PLOT EACH STORM
-    print ("     Creating storm rainfall maps (this could take a while)...")
+    print ("     Creating storm rainfall maps and hyetographs (this could take a while)...")
     fig = plt.figure(1)
     ax  = fig.add_subplot(111)
     fig.set_size_inches(figsizex,figsizey)
@@ -1633,7 +1634,13 @@ if DoDiagnostics:
         dmap.readshapefile(domainshp.split('.')[0],str(0),color="black")
 
     try:
-        os.remove(diagpath+'Storm*.png')
+        maplist=glob.glob(diagpath+'Storm*.png')
+        for filePath in maplist:
+            try:
+                os.remove(filePath)
+            except:
+                print("Error while deleting file : ", filePath)
+            
     except Exception:
         pass
             
@@ -1662,7 +1669,32 @@ if DoDiagnostics:
         ims.remove()
         sct.remove()
     plt.close()  
-   
+    
+    
+    # create hyetograph diagnostic plots:
+    try:
+        maplist=glob.glob(diagpath+'Hyetograph_Storm*.png')
+        for filePath in maplist:
+            try:
+                os.remove(filePath)
+            except:
+                print("Error while deleting file : ", filePath)
+            
+    except Exception:
+        pass
+
+    for i in range(0,nstorms):    
+        temprain=np.nansum(catrain[i,:,caty[i]:caty[i]+maskheight,catx[i]:catx[i]+maskwidth],axis=(1,2))/mnorm*rainprop.timeres/60.
+        fig = plt.figure()
+        ax  = fig.add_subplot(111)
+        fig.set_size_inches(6,4)
+        ax.bar(np.arange(0,temprain.shape[0]*rainprop.timeres/60.,rainprop.timeres/60.), temprain)
+        ax.set_title('Storm '+str(i+1)+': '+str(cattime[i,-1])+' Hyetograph\nMax Rainfall:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}')
+        ax.set_xlabel('Time [hours]')
+        ax.set_ylabel('Rainfall Rate [mm/hr]')
+        plt.savefig(diagpath+'Hyetograph_Storm'+str(i+1)+'_'+str(cattime[i,-1]).split('T')[0]+'.png',dpi=250)
+        plt.close()
+
 
 #==============================================================================
 # STEP 2 (OPTIONAL): STORM TRANSPOSITION
