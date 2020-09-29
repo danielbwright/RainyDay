@@ -6,3 +6,6 @@ Welcome to RainyDay. RainyDay is a framework for generating large numbers of rea
 Please note also that this repository does not contain any of the NetCDF-formatted precipitation files that are needed to actually perform an analysis with RainyDay. If you are interested in performing an analysis, I would recommend contacting me so we can discuss which datasets I have available in the proper input format. Rather than run RainyDay locally on your machine, I recommend using our web-based version, available here: https://her.cee.wisc.edu/rainyday-rainfall-for-modern-flood-hazard-assessment/. Development of the web-based version has been supported by the Research and Development Office at the U.S. Bureau of Reclamation.
 
 The latest version of RainyDay is distributed under the MIT open source license: https://opensource.org/licenses/MIT
+
+If you want RainyDay-ready Stage IV precipitation data for CONUS, see here: https://drive.google.com/drive/folders/0B6s2whbrq8qEb29FelgtU3A1bUk?usp=sharing
+
