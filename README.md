@@ -8,7 +8,11 @@ Please note also that this repository does not contain any of the NetCDF-formatt
 The latest version of RainyDay is distributed under the MIT open source license: https://opensource.org/licenses/MIT
 
 Several precipitation datasets have been prepared for usage in RainyDay. Each has its pros and cons in terms of accuracy, record length, and resolution. You should carefully consider the needs of your particular application. These datasets are provided without any guarantee of accuracy. In the case of NCEP Stage IV, it has been regridded from the HRAP to a geographic projection, and thus the actual precipitation rates vary slightly from the original dataset. 
+
 If you want RainyDay-ready Stage IV precipitation data for CONUS, see here: https://drive.google.com/drive/folders/0B6s2whbrq8qEb29FelgtU3A1bUk?usp=sharing
+
 If you want RainyDay-ready NLDAS-2 precipitation data for CONUS, see here: https://drive.google.com/drive/folders/1if8-rZk-qvqztjhYtscxpl_nmBDW64YQ?usp=sharing
+
 If you want RainyDay-ready nClimGrid-Daily precipitation data for CONUS, see here:https://drive.google.com/drive/folders/1G9-qc3gQgwuvmK_gAlNdgPOR111R345z?usp=sharing
+
 IMERG V06B Final run data are in preparation but are not currently available.
