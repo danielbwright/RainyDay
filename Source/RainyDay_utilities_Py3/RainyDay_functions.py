@@ -343,7 +343,8 @@ def SSTalt(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intensemean=None,int
         return rainsum,whichstep
 
 
-@jit(nopython=True,fastmath=True,parallel=True)
+#@jit(nopython=True,fastmath=True,parallel=True)
+@jit(nopython=True,fastmath=True)
 def numba_multimask_calc(passrain,trimmask,ssty,sstx,maskheight,maskwidth):
     train=np.multiply(passrain[ssty : ssty+maskheight , sstx : sstx+maskwidth],trimmask)
     rainsum=np.sum(train)       
@@ -393,7 +394,8 @@ def SSTalt_singlecell(passrain,sstx,ssty,trimmask,maskheight,maskwidth,intenseme
     
 
 
-@jit(nopython=True,fastmath=True,parallel=True)
+#@jit(nopython=True,fastmath=True,parallel=True)
+@jit(nopython=True,fastmath=True)
 def killerloop_singlecell(passrain,rainsum,whichstep,nreals,ssty,sstx,nsteps,durcheck=False,intensemean=None,homemean=None,homestd=None,multiout=None,rquant=None,intensestd=None,intensecorr=None,inverrf=None):
     maxmultiplier=1.5  # who knows what the right number is to use here...
     for k in prange(nreals):
@@ -792,7 +794,8 @@ def numbakernel_fast(rndloc,cumkernel,tempx,tempy,ncols):
     flatkern=np.append(0.,cumkernel.flatten()) 
     return kernelloop(nlocs,rndloc,flatkern,ncols,tempx,tempy)
 
-@jit(nopython=True,fastmath=True,parallel=True)
+#@jit(nopython=True,fastmath=True,parallel=True)
+@jit(nopython=True,fastmath=True)
 def kernelloop(nlocs,rndloc,flatkern,ncols,tempx,tempy):
     for i in prange(nlocs):
         diff=rndloc[i]-flatkern

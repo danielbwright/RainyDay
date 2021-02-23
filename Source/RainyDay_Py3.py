@@ -2247,16 +2247,27 @@ if FreqAnalysis:
                 sorttimes=np.zeros((maxind.shape[0],maxind.shape[1],int(duration*60/rainprop.timeres)),dtype="datetime64[m]")
             whichorigstorm=np.zeros((maxind.shape[0],maxind.shape[1]),dtype='int32')
             for i in range(0,nstorms):
-                if arfcorrection==False:
-                    sorttimes[np.squeeze(sortstorms==i),:]=cattime[i,:]
-                    
-                else:  # using ARFANALYSIS
-                    tempstep=np.squeeze(sortstep[np.squeeze(sortstorms==i),:])
-                    temptime=np.empty((tempstep.shape[0],int(duration*60/rainprop.timeres)),dtype="datetime64[m]")
-                    for j in range(0,tempstep.shape[0]):
-                        temptime[j,:]=cattime[i,tempstep[j]:tempstep[j]+int(duration*60/rainprop.timeres)]
-                    sorttimes[np.squeeze(sortstorms==i),:]=temptime
-                whichorigstorm[np.squeeze(sortstorms==i)]=modstormsno[i]+1
+                if np.sum(np.squeeze(sortstorms==i))>0:
+                    if arfcorrection==False:
+                        sorttimes[np.squeeze(sortstorms==i),:]=cattime[i,:]
+                        
+                    else:  # using ARFANALYSIS
+                        tstep=sortstep[np.squeeze(sortstorms==i),:]
+                        if len(tstep)>1:
+                            tempstep=np.squeeze(sortstep[np.squeeze(sortstorms==i),:])
+                            temptime=np.empty((tempstep.shape[0],int(duration*60/rainprop.timeres)),dtype="datetime64[m]")
+                            for j in range(0,tempstep.shape[0]):
+                                temptime[j,:]=cattime[i,tempstep[j]:tempstep[j]+int(duration*60/rainprop.timeres)]
+                        else:
+                            tempstep=sortstep[np.squeeze(sortstorms==i),:][0]
+                            temptime=np.empty((tempstep.shape[0],int(duration*60/rainprop.timeres)),dtype="datetime64[m]")
+                            for j in range(0,tempstep.shape[0]):
+                                temptime[j,:]=cattime[i,tempstep[j]:tempstep[j]+int(duration*60/rainprop.timeres)]
+    
+                        sorttimes[np.squeeze(sortstorms==i),:]=temptime
+                    whichorigstorm[np.squeeze(sortstorms==i)]=modstormsno[i]+1
+                else:
+                    continue
                 
                 
             if alllevels==False:
