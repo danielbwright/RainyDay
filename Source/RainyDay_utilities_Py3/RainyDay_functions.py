@@ -1066,9 +1066,27 @@ def readcatalog(rfile):
     outmax=np.array(infile.variables['basinrainfall'][:])
     outmask=np.array(infile.variables['gridmask'][:])
     domainmask=np.array(infile.variables['domainmask'][:])
+    try:
+        timeresolution=np.int(infile.variables['timeresolution'])
+        resexists=True
+    except:
+        resexists=False
     infile.close()
-    return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outmask,domainmask
-
+    
+    if resexists:
+        return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outmask,domainmask
+    else:
+        return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outmask,domainmask,timeresolution
+    
+def readtimeresolution(rfile):
+    infile=Dataset(rfile,'r')
+    try:
+        timeresolution=np.int(infile.variables['timeresolution'])
+    except:
+        sys.exit("The time resolution of your storm catalog is ambiguous. This only appears in very specific circumstances. You can contact Dr. Daniel Wright if you need help!")
+    
+    return timeresolution
+ 
 
 #==============================================================================
 # READ RAINFALL FILE FROM NETCDF: LEGACY VERSION! ONLY NEEDED IF READING AN OLDER DATASET
@@ -1092,7 +1110,7 @@ def readcatalog_LEGACY(rfile):
 #==============================================================================
 # WRITE RAINFALL FILE TO NETCDF
 #==============================================================================
-def writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,nstorms,gridmask,parameterfile,dmask):
+def writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,nstorms,gridmask,parameterfile,dmask,timeresolution=False):
     # SAVE outrain AS NETCDF FILE
     dataset=Dataset(catalogname, 'w', format='NETCDF4')
     
@@ -1113,11 +1131,14 @@ def writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,
     gmask=dataset.createVariable('gridmask',np.float32,('outlat','outlon',)) 
     domainmask=dataset.createVariable('domainmask',np.float32,('outlat','outlon',)) 
     
+    
     # Global Attributes
     with open(parameterfile, "r") as myfile:
         params=myfile.read()
     myfile.close
     dataset.description=params
+    if timeresolution!=False:
+        dataset.timeresolution=timeresolution
 
     dataset.history = 'Created ' + str(datetime.now())
     dataset.source = 'RainyDay Storm Catalog'

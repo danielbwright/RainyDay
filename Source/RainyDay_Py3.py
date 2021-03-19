@@ -185,6 +185,8 @@ else:
     else:
         print("Reading an existing storm catalog!")
         catrain,cattime,latrange,lonrange,catx,caty,catmax,_,domainmask=RainyDay.readcatalog(catalogname)
+        if catrain.shape[1]==1:
+            timeres=RainyDay.readtimeresolution(catalogname)
         yres=np.abs(np.mean(latrange[1:]-latrange[0:-1]))
         xres=np.abs(np.mean(lonrange[1:]-lonrange[0:-1])) 
         catarea=[lonrange[0],lonrange[-1]+xres,latrange[-1]-yres,latrange[0]]
@@ -223,6 +225,15 @@ try:
         sys.exit("Duration is zero or negative!")
 except ImportError:
     sys.exit("You didn't specify 'DURATION', which is a required field!")
+
+
+# this following bit is only needed in the very specific (and generally not recommended) case when the desired analysis/catalog duration is equal to the temporal resolution of the dataset
+# try:
+#     temptimeres=np.int(cardinfo[cardinfo[:,0]=="TIMERESOLUTION",1][0])
+#     print("A resolution of "+str(temptimeres)+" minutes has been provided. Be careful with this, because if it is improperly specified, this will cause errors. Note that TIMERESOLUTION is not needed unless the duration of each storm is to be exactly equal to the temporal resolution of the input data or catalog. In other words, make sure you know what you're doing!")
+# except Exception:
+#     temptimeres=False
+    
 
 
 try:
@@ -883,7 +894,11 @@ else:
     print("Using the existing storm catalog...")
 
     rainprop.spatialres=[xres,yres]
-    rainprop.timeres=np.float32(np.mean(cattime[-1,1:]-cattime[-1,0:-1]))
+    if len(cattime[-1,1:])!=0:
+        rainprop.timeres=np.float32(np.mean(cattime[-1,1:]-cattime[-1,0:-1]))
+    else:  
+        rainprop.timeres=timeres
+    
     rainprop.nodata=np.unique(catrain[catrain<0.])
     
     delt=np.timedelta64(cattime[0,-1]-(cattime[0,0]))
@@ -1212,7 +1227,7 @@ if CreateCatalog:
     
     # WRITE CATALOG
     print("writing storm catalog...")
-    RainyDay.writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,nstorms,catmask,parameterfile,domainmask)   
+    RainyDay.writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,nstorms,catmask,parameterfile,domainmask,timeresolution=rainprop.timeres)   
         
 
 #################################################################################
