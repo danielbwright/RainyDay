@@ -6,7 +6,7 @@
 #==============================================================================
 # WELCOME
 #==============================================================================
-#    Welcome to RainyDay, a framework for coupling remote sensing precipitation
+#    Welcome to RainyDay, a framework for coupling gridded precipitation
 #    fields with Stochastic Storm Transposition for assessment of rainfall-driven hazards.
 #    Copyright (C) 2017  Daniel Benjamin Wright (danielb.wright@gmail.com)
 #
@@ -35,9 +35,16 @@ import time
 from copy import deepcopy
 from scipy import ndimage, stats
 import pandas as pd
-from mpl_toolkits.basemap import Basemap
+
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import cartopy.io.shapereader as shpreader
+from cartopy.io.shapereader import Reader
 import glob
 import geopandas as gp
+import xarray as xr
+from cartopy.feature import ShapelyFeature
+import cartopy.mpl.ticker as cticker
 #from numba import njit, prange
 numbacheck=True
 
@@ -432,15 +439,6 @@ if CreateCatalog==False and np.allclose(inarea,catarea)==False:
     else:
         sys.exit("You are changing the domain size for an existing catalog. RainyDay can't handle that!")
         
-
-if areatype.lower()=="basin" or shpdom:
-    try:
-        gdalpath=str(cardinfo[cardinfo[:,0]=="GDALPATH",1][0])
-    except IndexError:
-        print("You wanted to use a shapefile for either the transposition domain or the watershed, but didn't specify GDALPATH. We'll try, but it might not work!")    
-        gdalpath=False
-
-
 try:  
     DoDiagnostics=cardinfo[cardinfo[:,0]=="DIAGNOSTICPLOTS",1][0]
     if DoDiagnostics.lower()=='true':
@@ -995,8 +993,8 @@ if areatype.lower()=="basin":
     if os.path.isfile(wsmaskshp)==False:
         sys.exit("can't find the basin shapefile!")
     else:
-        catmask=RainyDay.rastermaskGDAL(wsmaskshp,GEOG,rainprop,'fraction',fullpath,gdalpath=gdalpath)
-        catmask=catmask.reshape(ingridx.shape,order='F')
+        catmask=RainyDay.rastermask(wsmaskshp,GEOG,rainprop,'fraction')
+        #catmask=catmask.reshape(ingridx.shape,order='F')
 
 elif areatype.lower()=="point":
     catmask=np.zeros((rainprop.subdimensions))
@@ -1093,7 +1091,7 @@ if ncfdom:
     domainmask=np.reshape(interp(grid_rainfall),ingridx.shape)    
 
 elif domain_type.lower()=='irregular' and shpdom and CreateCatalog:
-    domainmask=RainyDay.rastermaskGDAL(domainshp,GEOG,rainprop,'simple',fullpath,gdalpath=gdalpath).astype('float32')
+    domainmask=RainyDay.rastermask(domainshp,GEOG,rainprop,'simple').astype('float32')
     #domainmask=catmask.reshape(ingridx.shape,order='F')
 elif domain_type.lower()=='rectangular':
     domainmask=np.ones((catmask.shape),dtype='float32')    
@@ -1257,7 +1255,10 @@ except Exception:
 if exclude.lower()!="none" and exclude.lower()!="false":
     exclude=exclude.split(',')
     for i in range(0,len(exclude)):
-        includestorms[np.int(exclude[i])-1]=False
+        if np.int(exclude[i])-1<len(catmax):
+            includestorms[np.int(exclude[i])-1]=False
+        else:
+            sys.exit("something seems wrong! You are exluding storms that aren't in the catalog.")
         
 includestorms[np.isclose(catmax,0.)]=False
         
@@ -1479,10 +1480,15 @@ elif transpotype=='kernel' or rescaletype!='none':
 
 if DoDiagnostics:       
     if areatype.lower()=="box":
-        from matplotlib.patches import Polygon
-        def plot_rectangle(bmap, lonmin,lonmax,latmin,latmax):
-            p = Polygon([(lonmin,latmin),(lonmin,latmax),(lonmax,latmax),(lonmax,latmin)],facecolor='grey',edgecolor='black',alpha=0.5,linewidth=2)
-            plt.gca().add_patch(p)
+        from shapely.geometry.polygon import LinearRing
+        lons = [boxarea[0], boxarea[0], boxarea[1], boxarea[1]]
+        lats = [boxarea[2], boxarea[3], boxarea[3], boxarea[2]]
+        ring = LinearRing(list(zip(lons, lats)))
+    elif areatype.lower()=="point":
+        from shapely.geometry.polygon import LinearRing
+        lons = [ptlon, ptlon, ptlon+rainprop.spatialres[0], ptlon+rainprop.spatialres[0]]
+        lats = [ptlat-rainprop.spatialres[1], ptlat,ptlat, ptlat-rainprop.spatialres[1]]
+        ring = LinearRing(list(zip(lons, lats)))
 
     print("preparing diagnostic plots...")
     
@@ -1495,33 +1501,32 @@ if DoDiagnostics:
     else:
         figsizey=5   
         figsizex=5
-      
-    if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-        wmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl')
-    if domain_type.lower()=="irregular":
-        dmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl')
+    
+    
+    if rainprop.subdimensions[1]>rainprop.subdimensions[0]:
+        orientation='horizontal'
+    else:
+        orientation='vertical'
+    
+    proj = ccrs.PlateCarree()
 
-
-    bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')    
-    #bmap.drawcoastlines(linewidth=1.25)
-    bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
-    bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
-    outerextent=np.array(rainprop.subextent,dtype='float32')  
+    
     if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-        try:            
-            wmap.readshapefile(wsmaskshp.split('.')[0],str(0),color="black")
+        try:
+            #wmap = shpreader.Reader(wsmaskshp)
+            wmap_feature=ShapelyFeature(Reader(wsmaskshp).geometries(),  crs=ccrs.PlateCarree())
         except ValueError:
-            if i==0:
                 print("problem plotting the watershed map; skipping...")
     if BaseMap.lower()!='none':
         try: 
-            bmap.readshapefile(BaseMap,BaseField,color="grey")
+            sys.exit("fix this")
         except ValueError:
-            if i==0:
-                print("problem plotting the basemap; skipping...")       
-
+                print("problem plotting the basemap; skipping...")   
+                
+                
+    outerextent=np.array(rainprop.subextent,dtype='float32')
+    coast_10m = cfeature.NaturalEarthFeature("physical", "land", "10m", edgecolor="k", facecolor="0.8")
     
-     
     # PLOT STORM OCCURRENCE PROBABILITIES-there is a problem with the "alignment of the raster and the storm locations
     print("     Creating storm probability map...")
     #plot_kernel=np.column_stack([pltkernel,np.zeros((pltkernel.shape[0],catmask.shape[1]-pltkernel.shape[1]))])
@@ -1533,124 +1538,136 @@ if DoDiagnostics:
 
     padtop=math.floor(maskheight/2)
     padbottom=math.ceil(maskheight/2)-1
-    plot_kernel=np.row_stack([np.zeros((padtop,pltkernel.shape[1])),pltkernel,np.zeros((padbottom,pltkernel.shape[1]))])
+    plot_kernel=np.row_stack([np.zeros((padtop,plot_kernel.shape[1])),plot_kernel,np.zeros((padbottom,plot_kernel.shape[1]))])
 
-    fig = plt.figure()
-    fig.set_size_inches(figsizex,figsizey)
-    f1=plt.imshow(plot_kernel,interpolation="none",extent=rainprop.subextent,cmap='Reds')
-    #plt.title("Probability of storm occurrence")
-    #bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')
-    #bmap.drawcoastlines(linewidth=1.25)
-    bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
-    bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
-    if BaseMap.lower()!='none':
-        bmap.readshapefile(BaseMap,BaseField,color="grey")
-    if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-        try: 
-            wmap.readshapefile(wsmaskshp.split('.')[0],str(0),color="black")
-        except ValueError:
-            if i==0:
-                print("problem plotting the watershed map; skipping...")
-    elif areatype.lower()=="box":
-        plot_rectangle(bmap,boxarea[0],boxarea[1],boxarea[2],boxarea[3])
-    elif areatype.lower()=="point":
-        plt.scatter(ptlon,ptlat,color="b")
-    if domain_type.lower()=="irregular" and shpdom:
-        try:
-            dmap.readshapefile(domainshp.split('.')[0],str(0),color="black")
-        except ValueError:
-            geodf_2d = gp.GeoDataFrame.from_file(domainshp) # plug_in your shapefile
-            geodf_2d.geometry = RainyDay.convert_3D_2D(geodf_2d.geometry)
-            geodf_2d.to_file(domainshp.split('.')[0]+'_2D.shp', driver = 'ESRI Shapefile') 
-            dmap.readshapefile(domainshp.split('.')[0]+'_2D.shp'.split('.')[0],str(0),color="black")
-    if rainprop.subdimensions[1]>rainprop.subdimensions[0]:
-        cb=plt.colorbar(f1,orientation='horizontal')
-    else:
-        cb=plt.colorbar(f1)
-    cb.set_label("Probability of storm occurrence")
-    #plt.text(probextent[0],probextent[3]-(maskheight/2)*rainprop.spatialres[0],"*Probability map may not extend to the edge of map.\nThat isn't a mistake!",size=6)
-    plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
-    plt.savefig(diagpath+'ProbabilityOfStorms.png',dpi=250)
-    plt.close()
+    states_provinces = cfeature.NaturalEarthFeature(
+        category='cultural',
+        name='admin_1_states_provinces_lines',
+        scale='50m',
+        facecolor='none')
+
+    xplot_kernel=xr.Dataset(
+        data_vars=dict(plot_kernel=(["y","x"],plot_kernel)),
+        coords=dict(
+            lat=(["y"],latrange),
+            lon=(["x"],lonrange)),
+        attrs=dict(description="diagnostic plotting of the storm probability density"),
+    )
     
+    fig = plt.figure(figsize=(figsizex,figsizey))
+    ax=plt.axes(projection=proj)
+    #ax.set_extent(outerextent)
+    if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
+        ax.add_feature(wmap_feature,edgecolor="red")
+    elif areatype.lower()=="box" or areatype.lower()=="point":
+        ax.add_geometries([ring], facecolor='none',edgecolor='red',crs=ccrs.PlateCarree())
+    xplot_kernel.plot_kernel.plot(x="lon",y="lat",yincrease=True,cmap='Blues',cbar_kwargs={'orientation':orientation,'label':"Probability of storm occurrence [-]"})
+    plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
+
+    #plt.show()
+    
+    #ax.add_feature(cfeature.LAND)
+    #ax.add_feature(cfeature.COASTLINE)
+    ax.add_feature(coast_10m)
+    ax.add_feature(states_provinces)
+    ax.set_xticks(np.linspace(outerextent[0],outerextent[1],2))
+    lon_formatter = cticker.LongitudeFormatter()
+    ax.xaxis.set_major_formatter(lon_formatter)
+
+# Define the yticks for latitude
+    ax.set_yticks(np.linspace(outerextent[2],outerextent[3],2))
+    lat_formatter = cticker.LatitudeFormatter()
+    ax.set(xlabel=None,ylabel=None)
+    ax.yaxis.set_major_formatter(lat_formatter)
+    
+    #ax.axes.set_title(xlabel=None)
+    
+    plt.savefig(diagpath+'ProbabilityOfStorms.png',dpi=250)
+    plt.close()   
+    
+
     
     # PLOT AVERAGE STORM RAINFALL
     print ("     Creating mean precipitation map...")
     avgrain=np.nansum(catrain,axis=(0,1))/nstorms*rainprop.timeres/60.
-    fig = plt.figure()
-    fig.set_size_inches(figsizex,figsizey)
-    f1=plt.imshow(avgrain,interpolation="none",extent=rainprop.subextent,cmap="Blues")
-    #plt.title("Average storm rainfall")
-    #bmap.drawcoastlines(linewidth=1.25)
-    bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
-    bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
-    if BaseMap.lower()!='none':
-        bmap.readshapefile(BaseMap,BaseField,color="grey")
+    xplot_avgrain=xr.Dataset(
+        data_vars=dict(avgrain=(["y","x"],avgrain)),
+        coords=dict(
+            lat=(["y"],latrange),
+            lon=(["x"],lonrange)),
+        attrs=dict(description="diagnostic plotting of the mean storm total rainfall"),
+    )
+    
+    fig = plt.figure(figsize=(figsizex,figsizey))
+    ax=plt.axes(projection=proj)
+    #ax.set_extent(outerextent)
     if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-        try:            
-            wmap.readshapefile(wsmaskshp.split('.')[0],str(0),color="black")
-        except ValueError:
-            if i==0:
-                print("problem plotting the watershed map; skipping...")
-    elif areatype.lower()=="box":
-        plot_rectangle(bmap,boxarea[0],boxarea[1],boxarea[2],boxarea[3])
-    elif areatype.lower()=="point":
-        plt.scatter(ptlon,ptlat,color="b")
-    if domain_type.lower()=="irregular" and shpdom:
-        try:
-            dmap.readshapefile(domainshp.split('.')[0],str(0),color="black")
-        except ValueError:
-            geodf_2d = gp.GeoDataFrame.from_file(domainshp) # plug_in your shapefile
-            geodf_2d.geometry = RainyDay.convert_3D_2D(geodf_2d.geometry)
-            geodf_2d.to_file(domainshp.split('.')[0]+'_2D.shp', driver = 'ESRI Shapefile') 
-            dmap.readshapefile(domainshp.split('.')[0]+'_2D.shp'.split('.')[0],str(0),color="black")
-    if rainprop.subdimensions[1]>rainprop.subdimensions[0]:
-        cb=plt.colorbar(f1,orientation='horizontal')
-    else:
-        cb=plt.colorbar(f1)
-    cb.set_label('Mean Storm Total precipitation [mm]')
+        ax.add_feature(wmap_feature,edgecolor="red")
+    elif areatype.lower()=="box" or areatype.lower()=="point":
+        ax.add_geometries([ring], facecolor='none',edgecolor='red',crs=ccrs.PlateCarree())
+    xplot_avgrain.avgrain.plot(x="lon",y="lat",yincrease=True,cmap='Blues',cbar_kwargs={'orientation':orientation,'label':"Mean Storm Total precipitation [mm]"})
     plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
+
+    ax.add_feature(states_provinces)
+    ax.add_feature(coast_10m)
+    ax.set_xticks(np.linspace(outerextent[0],outerextent[1],2))
+    lon_formatter = cticker.LongitudeFormatter()
+    ax.xaxis.set_major_formatter(lon_formatter)
+
+# Define the yticks for latitude
+    ax.set_yticks(np.linspace(outerextent[2],outerextent[3],2))
+    lat_formatter = cticker.LatitudeFormatter()
+    ax.set(xlabel=None,ylabel=None)
+    ax.yaxis.set_major_formatter(lat_formatter)
+    
+    #ax.axes.set_title(xlabel=None)
+    
     plt.savefig(diagpath+'MeanStormRain.png',dpi=250)
-    plt.close()
+    plt.close()   
+    
+    
+    
     
     # PLOT STORM RAINFALL Standard deviation
     print("     Creating precipitation standard deviation map...")
     stdrain=np.nanstd(np.nansum(catrain,axis=1)*rainprop.timeres/60.,axis=0)
-    fig = plt.figure()
-    fig.set_size_inches(figsizex,figsizey)
-    f1=plt.imshow(stdrain,interpolation="none",extent=rainprop.subextent,cmap="Greens")
-    #plt.title("Average storm rainfall")
-    #bmap.drawcoastlines(linewidth=1.25)
-    bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
-    bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
-    if BaseMap.lower()!='none':
-        bmap.readshapefile(BaseMap,BaseField,color="grey")
+    
+    xplot_stdrain=xr.Dataset(
+        data_vars=dict(stdrain=(["y","x"],stdrain)),
+        coords=dict(
+            lat=(["y"],latrange),
+            lon=(["x"],lonrange)),
+        attrs=dict(description="diagnostic plotting of the std dev. of storm total rainfall"),
+    )
+    
+    fig = plt.figure(figsize=(figsizex,figsizey))
+    ax=plt.axes(projection=proj)
+    #ax.set_extent(outerextent)
     if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-        try:            
-            wmap.readshapefile(wsmaskshp.split('.')[0],str(0),color="black")
-        except ValueError:
-            if i==0:
-                print("problem plotting the watershed map; skipping...")
-    elif areatype.lower()=="box":
-        plot_rectangle(bmap,boxarea[0],boxarea[1],boxarea[2],boxarea[3])
-    elif areatype.lower()=="point":
-        plt.scatter(ptlon,ptlat,color="b")
-    if domain_type.lower()=="irregular" and shpdom:
-        try:
-            dmap.readshapefile(domainshp.split('.')[0],str(0),color="black")
-        except ValueError:
-            geodf_2d = gp.GeoDataFrame.from_file(domainshp) # plug_in your shapefile
-            geodf_2d.geometry = RainyDay.convert_3D_2D(geodf_2d.geometry)
-            geodf_2d.to_file(domainshp.split('.')[0]+'_2D.shp', driver = 'ESRI Shapefile') 
-            dmap.readshapefile(domainshp.split('.')[0]+'_2D.shp'.split('.')[0],str(0),color="black")
-    if rainprop.subdimensions[1]>rainprop.subdimensions[0]:
-        cb=plt.colorbar(f1,orientation='horizontal')
-    else:
-        cb=plt.colorbar(f1)
-    cb.set_label('Standard Deviation of Storm Total Precipitation [mm]')
+        ax.add_feature(wmap_feature,edgecolor="red")
+    elif areatype.lower()=="box" or areatype.lower()=="point":
+        ax.add_geometries([ring], facecolor='none',edgecolor='red',crs=ccrs.PlateCarree())
+    xplot_stdrain.stdrain.plot(x="lon",y="lat",yincrease=True,cmap='Blues',cbar_kwargs={'orientation':orientation,'label':"Standard Deviation Storm Total precipitation [mm]"})
     plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
+
+    ax.add_feature(states_provinces)
+    ax.add_feature(coast_10m)
+    ax.set_xticks(np.linspace(outerextent[0],outerextent[1],2))
+    lon_formatter = cticker.LongitudeFormatter()
+    ax.xaxis.set_major_formatter(lon_formatter)
+
+# Define the yticks for latitude
+    ax.set_yticks(np.linspace(outerextent[2],outerextent[3],2))
+    lat_formatter = cticker.LatitudeFormatter()
+    ax.set(xlabel=None,ylabel=None)
+    ax.yaxis.set_major_formatter(lat_formatter)
+    
+    #ax.axes.set_title(xlabel=None)
+    
     plt.savefig(diagpath+'StdDevStormRain.png',dpi=250)
-    plt.close()
+    plt.close()   
+    
+    
     
     
     # PLOT CATALOG CDF/PDF
@@ -1673,73 +1690,42 @@ if DoDiagnostics:
     
     # PLOT EACH STORM
     print ("     Creating storm precipitation maps and hyetographs (this could take a while)...")
-    fig = plt.figure(1)
-    ax  = fig.add_subplot(111)
-    fig.set_size_inches(figsizex,figsizey)
-
-    bmap=Basemap(llcrnrlon=rainprop.subextent[0],llcrnrlat=rainprop.subextent[2],urcrnrlon=rainprop.subextent[1],urcrnrlat=rainprop.subextent[3],projection='cyl',resolution='l')    
-    #bmap.drawcoastlines(linewidth=1.25)
-    bmap.drawparallels(np.linspace(rainprop.subextent[2],rainprop.subextent[3],2),labels=[1,0,0,0],fmt='%6.1f')
-    bmap.drawmeridians(np.linspace(rainprop.subextent[0],rainprop.subextent[1],2),labels=[1,0,0,1],fmt='%6.1f')
-    #f1=plt.imshow(catrain[0,0,:], interpolation='none',extent=outerextent,cmap='Blues',vmin=0,vmax=np.nanmax(catmax))
     
-    if BaseMap.lower()!='none':
-        bmap.readshapefile(BaseMap,BaseField,color="grey")
-    if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-        try:            
-            wmap.readshapefile(wsmaskshp.split('.')[0],str(0),color="black")
-        except ValueError:
-            if i==0:
-                print("problem plotting the watershed map; skipping...")
-    elif areatype.lower()=="box":
-        plot_rectangle(bmap,boxarea[0],boxarea[1],boxarea[2],boxarea[3])
-    elif areatype.lower()=="point":
-        plt.scatter(ptlon,ptlat,color="b")
-    if domain_type.lower()=="irregular" and shpdom:
-        try:
-            dmap.readshapefile(domainshp.split('.')[0],str(0),color="black")
-        except ValueError:
-            geodf_2d = gp.GeoDataFrame.from_file(domainshp) # plug_in your shapefile
-            geodf_2d.geometry = RainyDay.convert_3D_2D(geodf_2d.geometry)
-            geodf_2d.to_file(domainshp.split('.')[0]+'_2D.shp', driver = 'ESRI Shapefile') 
-            dmap.readshapefile(domainshp.split('.')[0]+'_2D.shp'.split('.')[0],str(0),color="black")
-
-    try:
-        maplist=glob.glob(diagpath+'Storm*.png')
-        for filePath in maplist:
-            try:
-                os.remove(filePath)
-            except:
-                print("Error while deleting file : ", filePath)
-            
-    except Exception:
-        pass
-            
-    for i in range(0,nstorms):    
+    for i in range(0,nstorms): 
         temprain=np.nansum(catrain[i,:],axis=0)*rainprop.timeres/60.
-        if userdistr.all()==False:     
-            temprain[temprain<0.05*catmax[i]]=np.nan
-        if domain_type.lower()=="irregular":
-            temprain=np.multiply(temprain,domainmask)
-        ims=bmap.imshow(np.flipud(temprain), interpolation='none',extent=outerextent,cmap='Blues',vmin=0)
-        if rainprop.subdimensions[1]>rainprop.subdimensions[0]:
-            cb=fig.colorbar(ims,orientation='horizontal',pad=0.05,shrink=.8)
-        else:
-            cb=plt.colorbar()
-        cb.set_label('Total Precipitation [mm]')
-        sct=bmap.scatter(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=10,facecolors='none',edgecolors='r',alpha=0.5)
-        #if durcorrection:
-        #    ttl=plt.title('Storm '+str(i+1)+': '+str(cattime[i,-1])+'\nMax Rainfall:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}\nNote that the map is based on '+str(catduration)+'-hour rainfall')
-        #else:
-        #    ttl=plt.title('Storm '+str(i+1)+': '+str(cattime[i,-1])+'\nMax Rainfall:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}')
-        ttl=plt.title('Storm '+str(i+1)+': '+str(cattime[i,-1])+'\nMax Precipitation:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}')
         
+        xplot_temprain=xr.Dataset(
+            data_vars=dict(temprain=(["y","x"],temprain)),
+            coords=dict(
+                lat=(["y"],latrange),
+                lon=(["x"],lonrange)),
+            attrs=dict(description="diagnostic plotting of storm total rainfall"),
+        )
+        
+        fig = plt.figure(figsize=(figsizex,figsizey))
+        ax=plt.axes(projection=proj)
+        #ax.set_extent(outerextent)
+        if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
+            ax.add_feature(wmap_feature,edgecolor="red", facecolor='none')
+        elif areatype.lower()=="box" or areatype.lower()=="point":
+            ax.add_geometries([ring], facecolor='none',edgecolor='red',crs=ccrs.PlateCarree())
+        xplot_temprain.temprain.plot(x="lon",y="lat",yincrease=True,cmap='Blues',cbar_kwargs={'orientation':orientation,'label':"Storm Total precipitation [mm]"})
+
+        ax.add_feature(states_provinces)
+        ax.add_feature(coast_10m)
+        ax.set_xticks(np.linspace(outerextent[0],outerextent[1],2))
+        lon_formatter = cticker.LongitudeFormatter()
+        ax.xaxis.set_major_formatter(lon_formatter)
     
+    # Define the yticks for latitude
+        ax.set_yticks(np.linspace(outerextent[2],outerextent[3],2))
+        lat_formatter = cticker.LatitudeFormatter()
+        ax.set(xlabel=None,ylabel=None)
+        ax.yaxis.set_major_formatter(lat_formatter)
+        
+        
         plt.savefig(diagpath+'Storm'+str(i+1)+'_'+str(cattime[i,-1]).split('T')[0]+'.png',dpi=250)
-        cb.remove()
-        ims.remove()
-        sct.remove()
-    plt.close()  
+        plt.close()     
     
     
     # create hyetograph diagnostic plots:
@@ -1786,7 +1772,7 @@ if FreqAnalysis:
         ncounts=np.random.poisson(lrate,(nsimulations,nrealizations))
         cntr=0
         ncounts[ncounts==0]=1
-        if calctype.lower()=='npyear' and lrate<nperyear :   
+        if calctype.lower()=='npyear' and lrate<nperyear:   
             sys.exit("You specified to write multiple storms per year, but you specified a number that is too large relative to the resampling rate!")
         
     else:

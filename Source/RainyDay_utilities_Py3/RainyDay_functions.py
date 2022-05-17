@@ -3,7 +3,7 @@
 #==============================================================================
 
 
-#    Welcome to RainyDay, a framework for coupling remote sensing precipitation
+#    Welcome to RainyDay, a framework for coupling gridded precipitation
 #    fields with Stochastic Storm Transposition for assessment of rainfall-driven hazards.
 #    Copyright (C) 2017  Daniel Benjamin Wright (danielb.wright@gmail.com)
 #
@@ -30,13 +30,16 @@ import math
 from datetime import datetime, date, time, timedelta      
 import time
 from copy import deepcopy
+import fiona
 
-from mpl_toolkits.basemap import Basemap, addcyclic
+import cartopy
 from matplotlib.patches import Polygon   
 from scipy import stats
 from netCDF4 import Dataset, num2date, date2num
-#import gdal
 import rasterio
+from rasterio.transform import from_origin
+from rasterio.shutil import delete
+from rasterio.mask import mask
 import pandas as pd
 from numba import prange,jit
 
@@ -870,58 +873,66 @@ def creategrids(rainprop):
 
 #==============================================================================
 # FUNCTION TO CREATE A MASK ACCORDING TO A USER-DEFINED POLYGON SHAPEFILE AND PROJECTION
-# THIS USES GDAL COMMANDS FROM THE OS TO RASTERIZE
 #==============================================================================
-def rastermaskGDAL(shpname,shpproj,rainprop,masktype,fullpath,gdalpath=False):            
+def rastermask(shpname,shpproj,rainprop,masktype):            
     bndbox=np.array(rainprop.subind)
     bndcoords=np.array(rainprop.subextent)
     
-    if rainprop.projection==GEOG:
-        xdim=np.shape(np.linspace(bndcoords[0],bndcoords[1],rainprop.subind[1]-rainprop.subind[0]+1))[0]     
-        ydim=np.shape(np.linspace(bndcoords[2],bndcoords[3],rainprop.subind[2]-rainprop.subind[3]+1))[0]    
-    else:
-        sys.exit("unrecognized projection!")
-        
-    rastertemplate=np.zeros((ydim,xdim),dtype='float32')
+    xdim=rainprop.subdimensions[0]  
+    ydim=rainprop.subdimensions[1]  
 
+    with fiona.open(shpname, "r") as shapefile:
+        shapes = [feature["geometry"] for feature in shapefile]
+    if len(shapes)!=1:
+        sys.exit("something is wrong with the basin shapefile! It has either zero or >1 features!")
+    
+    
+    
     if masktype=='simple':
         print('creating simple mask (0s and 1s)')
-        #os.system('gdal_rasterize -at -burn 1.0 -te '+str(rainprop.subextent[0])+' '+str(rainprop.subextent[2])+' '+str(rainprop.subextent[1])+' '+str(rainprop.subextent[3])+' -tr '+str(rainprop.spatialres[0])+' '+str(rainprop.spatialres[1])+' -ts '+str(np.int(rainprop.subdimensions[1]))+' '+str(np.int(rainprop.subdimensions[0]))+' -ot Float32 '+shpname+' '+fullpath+'/temp.tiff');
-        if gdalpath!=False:
-            rasterizecmd=gdalpath+'/gdal_rasterize -at -burn 1.0 -te '+"%.9f"%(rainprop.subextent[0])+' '+"%.9f"%(rainprop.subextent[2])+' '+"%.9f"%(rainprop.subextent[1])+' '+"%.9f"%(rainprop.subextent[3])+' -tr '+"%.9f"%(rainprop.spatialres[0])+' '+"%.9f"%(rainprop.spatialres[1])+' -ts '+"%.9f"%(np.int(rainprop.subdimensions[1]))+' '+"%.9f"%(np.int(rainprop.subdimensions[0]))+' -ot Float32 '+shpname+' '+fullpath+'/temp.tiff'
-        else:
-            rasterizecmd='gdal_rasterize -at -burn 1.0 -te '+"%.9f"%(rainprop.subextent[0])+' '+"%.9f"%(rainprop.subextent[2])+' '+"%.9f"%(rainprop.subextent[1])+' '+"%.9f"%(rainprop.subextent[3])+' -tr '+"%.9f"%(rainprop.spatialres[0])+' '+"%.9f"%(rainprop.spatialres[1])+' -ts '+"%.9f"%(np.int(rainprop.subdimensions[1]))+' '+"%.9f"%(np.int(rainprop.subdimensions[0]))+' -ot Float32 '+shpname+' '+fullpath+'/temp.tiff'
-        os.system(rasterizecmd)
+        transform = from_origin(bndcoords[0], bndcoords[3], rainprop.spatialres[0], rainprop.spatialres[1])
+        rastertemplate=np.ones((ydim,xdim),dtype='float32')
+        rastermask = rasterio.open('temp9999.tif', 'w', driver='GTiff',
+                                height = rastertemplate.shape[1], width = rastertemplate.shape[0],
+                                count=1, dtype=str(rastertemplate.dtype),
+                                crs='+proj=longlat +datum=WGS84 +no_defs',
+                                transform=transform)
+        rastermask.write(rastertemplate, 1)
+        rastermask.close()
         
-        ds=rasterio.open(fullpath+'/temp.tiff')
-        rastertemplate=ds.read(1)
-        os.system('rm '+fullpath+'/temp.tiff')
+        with rasterio.open('temp9999.tif') as src:
+            simplemask, out_transform = mask(src, shapes, crop=False,all_touched=True)
+            out_meta = src.meta
+        rastertemplate =simplemask[0,:]
+
+
+
     elif masktype=="fraction":
         print('creating fractional mask (range from 0.0-1.0)')
-        #os.system('gdal_rasterize -at -burn 1.0 -te '+str(rainprop.subextent[0])+' '+str(rainprop.subextent[2])+' '+str(rainprop.subextent[1])+' '+str(rainprop.subextent[3])+' -tr '+str(rainprop.spatialres[0]/10.)+' '+str(rainprop.spatialres[1]/10.)+' -ts '+str(np.int(rainprop.subdimensions[1])*10)+' '+str(np.int(rainprop.subdimensions[0])*10)+' -ot Float32 '+shpname+' '+fullpath+'/temp.tiff');
-        #os.system('gdalwarp -r average -te '+str(rainprop.subextent[0])+' '+str(rainprop.subextent[2])+' '+str(rainprop.subextent[1])+' '+str(rainprop.subextent[3])+' -ts '+str(np.int(rainprop.subdimensions[1]))+' '+str(np.int(rainprop.subdimensions[0]))+' -overwrite '+fullpath+'/temp.tiff '+fullpath+'/tempAGG.tiff');
-
-        if gdalpath!=False:
-            rasterizecmd=gdalpath+'/gdal_rasterize -at -burn 1.0 -te '+"%.9f"%(rainprop.subextent[0])+' '+"%.9f"%(rainprop.subextent[2])+' '+"%.9f"%(rainprop.subextent[1])+' '+"%.9f"%(rainprop.subextent[3])+' -tr '+"%.9f"%(rainprop.spatialres[0]/10.)+' '+"%.9f"%(rainprop.spatialres[1]/10.)+' -ts '+"%.9f"%(np.int(rainprop.subdimensions[1])*10)+' '+"%.9f"%(np.int(rainprop.subdimensions[0])*10)+' -ot Float32 '+shpname+' '+fullpath+'/temp.tiff'
-        else:
-            rasterizecmd='gdal_rasterize -at -burn 1.0 -te '+"%.9f"%(rainprop.subextent[0])+' '+"%.9f"%(rainprop.subextent[2])+' '+"%.9f"%(rainprop.subextent[1])+' '+"%.9f"%(rainprop.subextent[3])+' -tr '+"%.9f"%(rainprop.spatialres[0]/10.)+' '+"%.9f"%(rainprop.spatialres[1]/10.)+' -ts '+"%.9f"%(np.int(rainprop.subdimensions[1])*10)+' '+"%.9f"%(np.int(rainprop.subdimensions[0])*10)+' -ot Float32 '+shpname+' '+fullpath+'/temp.tiff'
-        os.system(rasterizecmd)
-
-        if gdalpath!=False:
-            warpcmd=gdalpath+'/gdalwarp -r average -te '+"%.9f"%(rainprop.subextent[0])+' '+"%.9f"%(rainprop.subextent[2])+' '+"%.9f"%(rainprop.subextent[1])+' '+"%.9f"%(rainprop.subextent[3])+' -ts '+"%.9f"%(np.int(rainprop.subdimensions[1]))+' '+"%.9f"%(np.int(rainprop.subdimensions[0]))+' -overwrite '+fullpath+'/temp.tiff '+fullpath+'/tempAGG.tiff'
-        else:
-            warpcmd='gdalwarp -r average -te '+"%.9f"%(rainprop.subextent[0])+' '+"%.9f"%(rainprop.subextent[2])+' '+"%.9f"%(rainprop.subextent[1])+' '+"%.9f"%(rainprop.subextent[3])+' -ts '+"%.9f"%(np.int(rainprop.subdimensions[1]))+' '+"%.9f"%(np.int(rainprop.subdimensions[0]))+' -overwrite '+fullpath+'/temp.tiff '+fullpath+'/tempAGG.tiff'
-        os.system(warpcmd)
-
-        ds=rasterio.open(fullpath+'/tempAGG.tiff')
-        rastertemplate=ds.read(1)
-        os.system('rm '+fullpath+'/temp.tiff')
-        os.system('rm '+fullpath+'/tempAGG.tiff')
+        
+        transform = from_origin(bndcoords[0], bndcoords[3], rainprop.spatialres[0]/10., rainprop.spatialres[1]/10.)
+        rastertemplate=np.ones((ydim,xdim),dtype='float32')
+        rastermask = rasterio.open('temp9999.tif', 'w', driver='GTiff',
+                                height = 10*rastertemplate.shape[1], width = 10*rastertemplate.shape[0],
+                                count=1, dtype=str(rastertemplate.dtype),
+                                crs='+proj=longlat +datum=WGS84 +no_defs',
+                                transform=transform)
+        rastermask.write(rastertemplate, 1)
+        rastermask.close()
+        
+        with rasterio.open('temp9999.tif') as src:
+            simplemask, out_transform = mask(src, shapes, crop=False,all_touched=True)
+            out_meta = src.meta
+        rastertemplate=simplemask[0,:]
+        from scipy.signal import convolve2d
+        n=10
+        kernel = np.ones((n, n))
+        convolved = convolve2d(rastertemplate, kernel, mode='valid')
+        rastertemplate=convolved[::n, ::n] / n /n
+        
     else:
         sys.exit("You entered an incorrect mask type, options are 'simple' or 'fraction'")
-        
-    rastertemplate=np.array(rastertemplate[:])
-    
+    delete('temp9999.tif')   
     return rastertemplate   
 
 
@@ -1035,7 +1046,7 @@ def writemaximized(writename,outrain,writemax,write_ts,writex,writey,writetimes,
         
 
 #==============================================================================
-# READ RAINFALL FILE FROM NETCDF
+# READ RAINFALL FILE FROM NETCDF (ONLY FOR RAINYDAY NETCDF-FORMATTED DAILY FILES!
 #==============================================================================
 def readnetcdf(rfile,inbounds=False):
     infile=Dataset(rfile,'r')
@@ -1067,21 +1078,21 @@ def readcatalog(rfile):
     outmask=np.array(infile.variables['gridmask'][:])
     domainmask=np.array(infile.variables['domainmask'][:])
     try:
-        timeresolution=np.int(infile.variables['timeresolution'])
+        timeresolution=np.int(infile.timeresolution)
         resexists=True
     except:
         resexists=False
     infile.close()
     
     if resexists:
-        return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outmask,domainmask
-    else:
         return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outmask,domainmask,timeresolution
+    else:
+        return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outmask,domainmask
     
 def readtimeresolution(rfile):
     infile=Dataset(rfile,'r')
     try:
-        timeresolution=np.int(infile.variables['timeresolution'])
+        timeresolution=np.int(infile.timeresolution)
     except:
         sys.exit("The time resolution of your storm catalog is ambiguous. This only appears in very specific circumstances. You can contact Dr. Daniel Wright if you need help!")
     
