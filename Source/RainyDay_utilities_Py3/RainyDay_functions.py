@@ -1085,7 +1085,7 @@ def readcatalog(rfile):
     infile.close()
     
     if resexists:
-        return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outmask,domainmask,timeresolution
+    	return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outmask,domainmask,timeresolution
     else:
         return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outmask,domainmask
     

@@ -181,7 +181,7 @@ if len(catalogname.split('.nc'))==1:
 try:
     CreateCatalog=cardinfo[cardinfo[:,0]=="CREATECATALOG",1][0]
 except Exception:
-    CreateCatalog='true'
+    sys.exit("You didn't specify CREATECATALOG, which is required!")  
     
 if CreateCatalog.lower()=='true':
     CreateCatalog=True
@@ -191,9 +191,13 @@ else:
         sys.exit("You need to create a storm catalog first.")
     else:
         print("Reading an existing storm catalog!")
-        catrain,cattime,latrange,lonrange,catx,caty,catmax,_,domainmask=RainyDay.readcatalog(catalogname)
-        if catrain.shape[1]==1:
-            timeres=RainyDay.readtimeresolution(catalogname)
+        try:
+        	catrain,cattime,latrange,lonrange,catx,caty,catmax,_,domainmask,timeres=RainyDay.readcatalog(catalogname)
+        except ValueError:
+        	catrain,cattime,latrange,lonrange,catx,caty,catmax,_,domainmask=RainyDay.readcatalog(catalogname)
+        	timeres=RainyDay.readtimeresolution(catalogname)
+        #if catrain.shape[1]==1:
+        #    timeres=RainyDay.readtimeresolution(catalogname)
         yres=np.abs(np.mean(latrange[1:]-latrange[0:-1]))
         xres=np.abs(np.mean(lonrange[1:]-lonrange[0:-1])) 
         catarea=[lonrange[0],lonrange[-1]+xres,latrange[-1]-yres,latrange[0]]
@@ -245,8 +249,8 @@ except ImportError:
 
 try:
     samplingtype=cardinfo[cardinfo[:,0]=="RESAMPLING",1][0]
-    if samplingtype.lower()!='poisson' and samplingtype.lower()!='empirical':
-        sys.exit("unrecognized storm count resampling type, options are: 'poisson' or 'empirical'")
+    if samplingtype.lower()!='poisson' and samplingtype.lower()!='empirical' and samplingtype.lower()!='negbinom':
+        sys.exit("unrecognized storm count resampling type, options are: 'poisson', 'empirical', or 'negbinom'")
 except Exception:
     samplingtype='poisson'
 
@@ -254,6 +258,8 @@ if samplingtype=='poisson':
     print("Poisson-based temporal resampling scheme will be used!")
 elif samplingtype=='empirical':
     print("Empirically-based temporal resampling scheme will be used!")
+elif samplingtype=='negbinom':
+    print("Negative binomial-based temporal resampling scheme will be used! WARNING: this is not tested!")
 
 try:
     areatype=str(cardinfo[cardinfo[:,0]=="POINTAREA",1][0])
@@ -263,15 +269,16 @@ try:
             print("You selected 'watershed' for 'POINTAREA', please note that if the watershed is not in a regular lat/lon projection such as EPSG4326/WGS 84, the results will likely be incorrect!")
         except ImportError:
             sys.exit("You specified 'watershed' for 'POINTAREA' but didn't specify 'WATERSHEDSHP'")            
-    elif areatype.lower()=="point":
+    elif areatype.lower()=="point" or areatype.lower()=="grid":
         try:
             ptlat=np.float32(cardinfo[cardinfo[:,0]=="POINTLAT",1][0]) 
             ptlon=np.float32(cardinfo[cardinfo[:,0]=="POINTLON",1][0]) 
             ctrlat=ptlat
             ctrlon=ptlon
+            areatype="point"
         except ImportError:
             sys.exit("You specified 'point' for 'POINTAREA' but didn't properly specify 'POINTLAT' and 'POINTLON'")
-    elif areatype.lower()=="box":
+    elif areatype.lower()=="box" or areatype.lower()=="rectangle":
         try:
             box1=np.float32(cardinfo[cardinfo[:,0]=="BOX_YMIN",1][0])
             box2=np.float32(cardinfo[cardinfo[:,0]=="BOX_YMAX",1][0])
@@ -280,6 +287,7 @@ try:
             boxarea=np.array([box3,box4,box1,box2])
             ctrlat=(box1+box2)/2.
             ctrlon=(box3+box4)/2.
+            areatype="box"
         except ImportError:
             sys.exit("You specified 'box' for 'POINTAREA' but didn't properly specify 'BOX_YMIN', 'BOX_YMAX', 'BOX_XMIN', and 'BOX_XMAX'")
     elif areatype.lower()=="pointlist":
@@ -294,7 +302,7 @@ try:
     else:
         sys.exit("unrecognized area type")
 except ImportError:
-    sys.exit("You didn't specify 'POINTAREA', which needs to either be set to 'basin', 'point', or 'box'")
+    sys.exit("You didn't specify 'POINTAREA', which needs to either be set to 'watershed', 'point', 'grid', or 'rectangle'")
     
 # transposition
 try:
@@ -320,7 +328,7 @@ except Exception:
 # Use stochastic or deterministic ratio multiplier?
 rescaletype='none'
 try:
-    rescalingtype=cardinfo[cardinfo[:,0]=="RESCALING",1][0]
+    rescalingtype=cardinfo[cardinfo[:,0]=="ENHANCEDSST",1][0]
     if rescalingtype.lower()=='stochastic' or rescalingtype.lower()=='deterministic':
         print("You selected the 'Ratio Rescaling'! This is a more advanced option that should be used with caution")
         if rescalingtype.lower()=='stochastic':
@@ -355,7 +363,7 @@ except Exception:
 
     
 try:   
-    do_deterministic=cardinfo[cardinfo[:,0]=="DETERMINISTIC",1][0]
+    do_deterministic=cardinfo[cardinfo[:,0]=="MAXTRANSPO",1][0]
     if do_deterministic.lower():
         deterministic=True
     else:
@@ -547,15 +555,6 @@ if CreateCatalog:
     except ImportError:
         sys.exit("You didn't specify 'RAINPATH', which is a required field for creating a new storm catalog!")
 
-      
-try:   
-    BaseMap=cardinfo[cardinfo[:,0]=="BASEMAP",1][0]
-    if BaseMap.lower()!='none':
-        BaseMap=BaseMap.split('.')[0]
-        BaseField=cardinfo[cardinfo[:,0]=="BASEFIELD",1][0]
-except Exception:
-    BaseMap='none'
-
 
 # SENSITIVITY ANALYSIS OPTIONS:
 try:
@@ -626,6 +625,8 @@ if Scenarios and areatype.lower()!="pointlist":
             print("RainyDay will output "+str(np.int(nperyear))+" storms per synthetic year! If this is a big number, this could be very slow!")
             calctype='npyear'
             nperyear=np.int(nperyear)
+            if nperyear==1:
+            	nperyear='false'
 #        else:
 #            print("RainyDay will output "+str(nperyear)+" storms per synthetic year!")
     except Exception:
@@ -829,7 +830,7 @@ except Exception:
     arfcorrection=False
 
 if CreateCatalog and durcorrection:
-    catduration=max([48.,3.*duration])    # this will be slow!
+    catduration=max([72.,3.*duration])    # this will be slow!
     print('Since DURCORRECTION will be used and a storm catalog will be created, the duration of the catalog will be '+"{0:0.2f}".format(catduration)+' hours')
 elif CreateCatalog:
     catduration=duration
@@ -1259,6 +1260,9 @@ if exclude.lower()!="none" and exclude.lower()!="false":
             includestorms[np.int(exclude[i])-1]=False
         else:
             sys.exit("something seems wrong! You are exluding storms that aren't in the catalog.")
+            
+if exclude.lower()!="none" and CreateCatalog:
+	sys.exit("You are excluding storms from a new storm catalog, without inspecting them first. This seems like a bad idea.")
         
 includestorms[np.isclose(catmax,0.)]=False
         
@@ -1517,11 +1521,11 @@ if DoDiagnostics:
             wmap_feature=ShapelyFeature(Reader(wsmaskshp).geometries(),  crs=ccrs.PlateCarree())
         except ValueError:
                 print("problem plotting the watershed map; skipping...")
-    if BaseMap.lower()!='none':
-        try: 
-            sys.exit("fix this")
-        except ValueError:
-                print("problem plotting the basemap; skipping...")   
+#    if BaseMap.lower()!='none':
+#        try: 
+#            sys.exit("fix this")
+#        except ValueError:
+#                print("problem plotting the basemap; skipping...")   
                 
                 
     outerextent=np.array(rainprop.subextent,dtype='float32')
@@ -1568,7 +1572,7 @@ if DoDiagnostics:
     
     #ax.add_feature(cfeature.LAND)
     #ax.add_feature(cfeature.COASTLINE)
-    ax.add_feature(coast_10m)
+    #ax.add_feature(coast_10m)
     ax.add_feature(states_provinces)
     ax.set_xticks(np.linspace(outerextent[0],outerextent[1],2))
     lon_formatter = cticker.LongitudeFormatter()
@@ -1609,7 +1613,7 @@ if DoDiagnostics:
     plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
 
     ax.add_feature(states_provinces)
-    ax.add_feature(coast_10m)
+    #ax.add_feature(coast_10m)
     ax.set_xticks(np.linspace(outerextent[0],outerextent[1],2))
     lon_formatter = cticker.LongitudeFormatter()
     ax.xaxis.set_major_formatter(lon_formatter)
@@ -1651,7 +1655,7 @@ if DoDiagnostics:
     plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
 
     ax.add_feature(states_provinces)
-    ax.add_feature(coast_10m)
+    #ax.add_feature(coast_10m)
     ax.set_xticks(np.linspace(outerextent[0],outerextent[1],2))
     lon_formatter = cticker.LongitudeFormatter()
     ax.xaxis.set_major_formatter(lon_formatter)
@@ -1712,7 +1716,7 @@ if DoDiagnostics:
         xplot_temprain.temprain.plot(x="lon",y="lat",yincrease=True,cmap='Blues',cbar_kwargs={'orientation':orientation,'label':"Storm Total precipitation [mm]"})
 
         ax.add_feature(states_provinces)
-        ax.add_feature(coast_10m)
+        #ax.add_feature(coast_10m)
         ax.set_xticks(np.linspace(outerextent[0],outerextent[1],2))
         lon_formatter = cticker.LongitudeFormatter()
         ax.xaxis.set_major_formatter(lon_formatter)
@@ -1774,7 +1778,16 @@ if FreqAnalysis:
         ncounts[ncounts==0]=1
         if calctype.lower()=='npyear' and lrate<nperyear:   
             sys.exit("You specified to write multiple storms per year, but you specified a number that is too large relative to the resampling rate!")
-        
+    elif samplingtype.lower()=='negbinom':
+        _,yrscount=np.unique(cattime[:,-1].astype('datetime64[Y]').astype(int)+1970,return_counts=True)
+        if len(yrscount)<nyears:
+            yrscount=np.append(yrscount,np.ones(nyears-len(yrscount),dtype='int32'))
+        rparam=np.mean(yrscount)*np.mean(yrscount)/(np.var(yrscount)-np.mean(yrscount))   
+        pparam=1.-np.mean(yrscount)/np.var(yrscount)
+        ncounts=np.random.negative_binomial(rparam,pparam,size=(nsimulations,nrealizations)) 
+        if calctype.lower()=='npyear' and np.mean(yrscount)<nperyear :   
+            sys.exit("You specified to write multiple storms per year, but you specified a number that is too large relative to the resampling rate!")
+             	
     else:
         _,yrscount=np.unique(cattime[:,-1].astype('datetime64[Y]').astype(int)+1970,return_counts=True)
         if len(yrscount)<nyears:
@@ -2349,6 +2362,7 @@ if FreqAnalysis:
                                 maxstm_rain[k,:]=np.reshape(interp(outgrid),rainprop.subdimensions)[max_trnsy:(max_trnsy+maskheight),max_trnsx:(max_trnsx+maskwidth)]
                             maxstm_rain=np.multiply(maxstm_rain,nanmask)
                             maxstm_ts=np.nansum(np.multiply(maxstm_rain,trimmask)/mnorm,axis=(1,2))
+        	
         
         
     #################################################################################
@@ -2358,7 +2372,6 @@ if FreqAnalysis:
     if calctype!='npyear':
         print("preparing frequency analysis...")
     
-                
         if areatype.lower()=='pointlist':
             spreadmean=np.nanmean(sortrain,1)
             
@@ -2456,7 +2469,10 @@ if FreqAnalysis:
     #################################################################################
     # STEP 4 (OPTIONAL): WRITE RAINFALL SCENARIOS
     #################################################################################
-    
+
+    if deterministic:
+        RainyDay.writemaximized(wd+'/'+scenarioname+'/'+scenarioname+'_maximizedstorm.nc',maxstm_rain,maxstm_avgrain,maxstm_ts,max_trnsx,max_trnsy,maxstm_time,subrangelat,subrangelon)
+       
     
     if Scenarios and calctype!='npyear':
         print("writing spacetime precipitation scenarios...")
@@ -2585,10 +2601,6 @@ if FreqAnalysis:
             
             #print "need to write angles to the realization files"
             RainyDay.writerealization(rlz,nrealizations,writename,outrain,writemax[:,rlz],np.squeeze(writestorm[:,rlz]),writeperiod,np.squeeze(writex[:,rlz]),np.squeeze(writey[:,rlz]),outtime,subrangelat,subrangelon,whichorigstorm[:,rlz])
-        
-        if deterministic:
-            RainyDay.writemaximized(wd+'/'+scenarioname+'/'+scenarioname+'_maximizedstorm.nc',maxstm_rain,maxstm_avgrain,maxstm_ts,max_trnsx,max_trnsy,maxstm_time,subrangelat,subrangelon)
-    
     
     elif calctype=='npyear':
         # this code is adapted from Guo Yu's version of RainyDay
