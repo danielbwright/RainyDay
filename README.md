@@ -15,4 +15,4 @@ If you want RainyDay-ready NLDAS-2 precipitation data for CONUS, see here: https
 
 If you want RainyDay-ready nClimGrid-Daily precipitation data for CONUS, see here:https://drive.google.com/drive/folders/1G9-qc3gQgwuvmK_gAlNdgPOR111R345z?usp=sharing
 
-IMERG V06B Final run data are in preparation but are not currently available. If you want RainyDay-ready IMERG V06B Final run data for the entire globe, see here (warning, this dataset is large; about 320 GB): https://drive.google.com/drive/folders/1b1I9BU-48lF-3Gavvt5JIwXy0wtC0rsU?usp=sharing
+If you want RainyDay-ready IMERG V06B Final run data for the entire globe, see here (warning, this dataset is large; about 320 GB): https://drive.google.com/drive/folders/1b1I9BU-48lF-3Gavvt5JIwXy0wtC0rsU?usp=sharing
