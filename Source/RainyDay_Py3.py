@@ -192,10 +192,10 @@ else:
     else:
         print("Reading an existing storm catalog!")
         try:
-        	catrain,cattime,latrange,lonrange,catx,caty,catmax,_,domainmask,timeres=RainyDay.readcatalog(catalogname)
+            catrain,cattime,latrange,lonrange,catx,caty,catmax,_,domainmask,timeres=RainyDay.readcatalog(catalogname)
         except ValueError:
-        	catrain,cattime,latrange,lonrange,catx,caty,catmax,_,domainmask=RainyDay.readcatalog(catalogname)
-        	timeres=RainyDay.readtimeresolution(catalogname)
+            catrain,cattime,latrange,lonrange,catx,caty,catmax,_,domainmask=RainyDay.readcatalog(catalogname)
+            timeres=RainyDay.readtimeresolution(catalogname)
         #if catrain.shape[1]==1:
         #    timeres=RainyDay.readtimeresolution(catalogname)
         yres=np.abs(np.mean(latrange[1:]-latrange[0:-1]))
@@ -264,6 +264,7 @@ elif samplingtype=='negbinom':
 try:
     areatype=str(cardinfo[cardinfo[:,0]=="POINTAREA",1][0])
     if areatype.lower()=="basin" or areatype.lower()=="watershed":
+        areatype='basin'
         try:
             wsmaskshp=str(cardinfo[cardinfo[:,0]=="WATERSHEDSHP",1][0])
             print("You selected 'watershed' for 'POINTAREA', please note that if the watershed is not in a regular lat/lon projection such as EPSG4326/WGS 84, the results will likely be incorrect!")
@@ -419,6 +420,15 @@ if domain_type.lower()=='irregular':
         except Exception:
             pass
     else:
+        try:
+            domainshp=str(cardinfo[cardinfo[:,0]=="DOMAINSHP",1][0])
+            if os.path.isfile(domainshp)==False:
+                sys.exit("can't find the transposition domain shapefile!")
+            else:
+                print("You selected 'irregular' for 'DOMAINTYPE', please note that if the domain shapefile is not in a regular lat/lon projection such as EPSG4326/WGS 84, the results will likely be incorrect!")
+                shpdom=True
+        except Exception:
+            print("Trouble finding the domain shapefile. Technically we don't need it, so we'll skip this part.")          
         yres=np.abs(np.mean(latrange[1:]-latrange[0:-1]))
         xres=np.abs(np.mean(lonrange[1:]-lonrange[0:-1]))
         inarea=np.array([lonrange[0],lonrange[-1]+res,latrange[-1]-res,latrange[0]])  
@@ -486,7 +496,7 @@ if areatype.lower()=="pointlist":
     FreqFile_min=fullpath+'/'+scenarioname+'_min.FreqAnalysis'
     FreqFile_max=fullpath+'/'+scenarioname+'_max.FreqAnalysis'
 else:
-    FreqFile=fullpath+'/'+scenarioname+'.FreqAnalysis'
+    FreqFile=fullpath+'/'+scenarioname+'_FreqAnalysis.csv'
 
 try:
     Scenarios=cardinfo[cardinfo[:,0]=="SCENARIOS",1][0]
@@ -714,7 +724,7 @@ try:
             if ',' in speclevels:
                 speclevels=speclevels.split(',')
                 try:
-                    speclevels=np.float32(speclevels,dtype="float32")
+                    speclevels=np.float32(speclevels)
                 except:
                     print("Non-numeric value provided to RETURNLEVELS.")
                     
@@ -990,7 +1000,7 @@ hourinclude=hourinclude.astype('bool')
 #==============================================================================
 
 print("setting up the grid information and masks...")
-if areatype.lower()=="basin":
+if areatype.lower()=="basin" or areatype.lower()=="watershed":
     if os.path.isfile(wsmaskshp)==False:
         sys.exit("can't find the basin shapefile!")
     else:
@@ -1252,18 +1262,18 @@ try:
     exclude=exclude.replace(' ', '')
 except Exception:
     exclude='none'
+   
+if exclude.lower()!="none" and exclude.lower()!="false" and CreateCatalog==False:
+	exclude=exclude.split(',')
+	for i in range(0,len(exclude)):
+		if np.int(exclude[i])-1<len(catmax):
+			includestorms[np.int(exclude[i])-1]=False
+		else:
+			sys.exit("something seems wrong! You are excluding storms that aren't in the catalog.")
+elif exclude.lower()!="none" and CreateCatalog:
+		sys.exit("You are excluding storms from a new storm catalog, without inspecting them first. This seems like a bad idea.")
+
     
-if exclude.lower()!="none" and exclude.lower()!="false":
-    exclude=exclude.split(',')
-    for i in range(0,len(exclude)):
-        if np.int(exclude[i])-1<len(catmax):
-            includestorms[np.int(exclude[i])-1]=False
-        else:
-            sys.exit("something seems wrong! You are exluding storms that aren't in the catalog.")
-            
-if exclude.lower()!="none" and CreateCatalog:
-	sys.exit("You are excluding storms from a new storm catalog, without inspecting them first. This seems like a bad idea.")
-        
 includestorms[np.isclose(catmax,0.)]=False
         
 catrain=catrain[includestorms,:]
@@ -1521,6 +1531,9 @@ if DoDiagnostics:
             wmap_feature=ShapelyFeature(Reader(wsmaskshp).geometries(),  crs=ccrs.PlateCarree())
         except ValueError:
                 print("problem plotting the watershed map; skipping...")
+                
+    if domain_type.lower()=="irregular" and os.path.isfile(domainshp):
+        domain_feature=ShapelyFeature(Reader(domainshp).geometries(),  crs=ccrs.PlateCarree())
 #    if BaseMap.lower()!='none':
 #        try: 
 #            sys.exit("fix this")
@@ -1562,11 +1575,14 @@ if DoDiagnostics:
     ax=plt.axes(projection=proj)
     #ax.set_extent(outerextent)
     if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-        ax.add_feature(wmap_feature,edgecolor="red")
+        ax.add_feature(wmap_feature,edgecolor="red",facecolor="None")
     elif areatype.lower()=="box" or areatype.lower()=="point":
-        ax.add_geometries([ring], facecolor='none',edgecolor='red',crs=ccrs.PlateCarree())
-    xplot_kernel.plot_kernel.plot(x="lon",y="lat",yincrease=True,cmap='Blues',cbar_kwargs={'orientation':orientation,'label':"Probability of storm occurrence [-]"})
-    plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
+        ax.add_geometries([ring], facecolor='none',edgecolor='black',crs=ccrs.PlateCarree())
+        
+    if domain_type.lower()=="irregular" and os.path.isfile(domainshp):
+        ax.add_feature(domain_feature,edgecolor="black",facecolor="None")
+    xplot_kernel.plot_kernel.plot(x="lon",y="lat",yincrease=True,cmap='Reds',cbar_kwargs={'orientation':orientation,'label':"Probability of storm occurrence [-]"})
+    plt.scatter(lonrange[catx]+(maskwidth/2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
 
     #plt.show()
     
@@ -1584,6 +1600,7 @@ if DoDiagnostics:
     ax.set(xlabel=None,ylabel=None)
     ax.yaxis.set_major_formatter(lat_formatter)
     
+    ax.set_title('Prob. of storm occurrence from\n'+catalogname.split('/')[-1])
     #ax.axes.set_title(xlabel=None)
     
     plt.savefig(diagpath+'ProbabilityOfStorms.png',dpi=250)
@@ -1606,11 +1623,15 @@ if DoDiagnostics:
     ax=plt.axes(projection=proj)
     #ax.set_extent(outerextent)
     if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-        ax.add_feature(wmap_feature,edgecolor="red")
+        ax.add_feature(wmap_feature,edgecolor="red",facecolor="None")
     elif areatype.lower()=="box" or areatype.lower()=="point":
         ax.add_geometries([ring], facecolor='none',edgecolor='red',crs=ccrs.PlateCarree())
+        
+    if domain_type.lower()=="irregular" and os.path.isfile(domainshp):
+        ax.add_feature(domain_feature,edgecolor="black",facecolor="None")
+
     xplot_avgrain.avgrain.plot(x="lon",y="lat",yincrease=True,cmap='Blues',cbar_kwargs={'orientation':orientation,'label':"Mean Storm Total precipitation [mm]"})
-    plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
+    plt.scatter(lonrange[catx]+(maskwidth/2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
 
     ax.add_feature(states_provinces)
     #ax.add_feature(coast_10m)
@@ -1624,6 +1645,7 @@ if DoDiagnostics:
     ax.set(xlabel=None,ylabel=None)
     ax.yaxis.set_major_formatter(lat_formatter)
     
+    ax.set_title('Mean of Storm Catalog Rainfall from\n'+catalogname.split('/')[-1])
     #ax.axes.set_title(xlabel=None)
     
     plt.savefig(diagpath+'MeanStormRain.png',dpi=250)
@@ -1648,11 +1670,14 @@ if DoDiagnostics:
     ax=plt.axes(projection=proj)
     #ax.set_extent(outerextent)
     if areatype.lower()=="basin" and os.path.isfile(wsmaskshp):
-        ax.add_feature(wmap_feature,edgecolor="red")
+        ax.add_feature(wmap_feature,edgecolor="red", facecolor='none')
     elif areatype.lower()=="box" or areatype.lower()=="point":
         ax.add_geometries([ring], facecolor='none',edgecolor='red',crs=ccrs.PlateCarree())
-    xplot_stdrain.stdrain.plot(x="lon",y="lat",yincrease=True,cmap='Blues',cbar_kwargs={'orientation':orientation,'label':"Standard Deviation Storm Total precipitation [mm]"})
-    plt.scatter(lonrange[catx]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2+maskheight%2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
+        
+    if domain_type.lower()=="irregular" and os.path.isfile(domainshp):
+        ax.add_feature(domain_feature,edgecolor="black",facecolor="None")
+    xplot_stdrain.stdrain.plot(x="lon",y="lat",yincrease=True,cmap='Greens',cbar_kwargs={'orientation':orientation,'label':"Standard Deviation Storm Total precipitation [mm]"})
+    plt.scatter(lonrange[catx]+(maskwidth/2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
 
     ax.add_feature(states_provinces)
     #ax.add_feature(coast_10m)
@@ -1666,6 +1691,7 @@ if DoDiagnostics:
     ax.set(xlabel=None,ylabel=None)
     ax.yaxis.set_major_formatter(lat_formatter)
     
+    ax.set_title('Std. Dev. of Storm Catalog Rainfall from\n'+catalogname.split('/')[-1])
     #ax.axes.set_title(xlabel=None)
     
     plt.savefig(diagpath+'StdDevStormRain.png',dpi=250)
@@ -1713,6 +1739,9 @@ if DoDiagnostics:
             ax.add_feature(wmap_feature,edgecolor="red", facecolor='none')
         elif areatype.lower()=="box" or areatype.lower()=="point":
             ax.add_geometries([ring], facecolor='none',edgecolor='red',crs=ccrs.PlateCarree())
+        if domain_type.lower()=="irregular" and os.path.isfile(domainshp):
+            ax.add_feature(domain_feature,edgecolor="black",facecolor="None")
+            
         xplot_temprain.temprain.plot(x="lon",y="lat",yincrease=True,cmap='Blues',cbar_kwargs={'orientation':orientation,'label':"Storm Total precipitation [mm]"})
 
         ax.add_feature(states_provinces)
@@ -1726,7 +1755,8 @@ if DoDiagnostics:
         lat_formatter = cticker.LatitudeFormatter()
         ax.set(xlabel=None,ylabel=None)
         ax.yaxis.set_major_formatter(lat_formatter)
-        
+        ax.set_title('Storm '+str(i+1)+': '+str(cattime[i,-1])+' Storm Total Rainfall\nMax Precipitation:'+str(round(catmax[i]))+' mm @ Lat/Lon:'+"{:6.1f}".format(latrange[caty[i]]-(maskheight/2+maskheight%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}'+','+"{:6.1f}".format(lonrange[catx[i]]+(maskwidth/2+maskwidth%2)*rainprop.spatialres[0])+u'\N{DEGREE SIGN}')
+
         
         plt.savefig(diagpath+'Storm'+str(i+1)+'_'+str(cattime[i,-1]).split('T')[0]+'.png',dpi=250)
         plt.close()     
@@ -1779,6 +1809,7 @@ if FreqAnalysis:
         if calctype.lower()=='npyear' and lrate<nperyear:   
             sys.exit("You specified to write multiple storms per year, but you specified a number that is too large relative to the resampling rate!")
     elif samplingtype.lower()=='negbinom':
+        sys.exit("Sorry, the negative binomial resampling isn't set up yet :(")
         _,yrscount=np.unique(cattime[:,-1].astype('datetime64[Y]').astype(int)+1970,return_counts=True)
         if len(yrscount)<nyears:
             yrscount=np.append(yrscount,np.ones(nyears-len(yrscount),dtype='int32'))
@@ -2453,14 +2484,14 @@ if FreqAnalysis:
                     
                     
             plt.ylim(lowerlimit,upperlimit)
-            ax.set_xlabel('Exceedance Probability [-]\n1/(Return Period) [year]')
-            ax.set_ylabel('Precipitation Depth [mm]')
+            ax.set_xlabel('Annual Exceed. Prob. [-]\n1/(Return Period) [year]')
+            ax.set_ylabel('Precip. Depth [mm]')
             ax.set_yscale('log')
             ax.set_xscale('log')
             plt.gca().invert_xaxis()
             ax.grid()
             plt.tight_layout()
-            plt.savefig(fullpath+'/FrequencyAnalysis.png',dpi=250)
+            plt.savefig(fullpath+'/'+scenarioname+'_FrequencyAnalysis.png',dpi=250)
             plt.close('all')
     else:
         print("You selected NPERYEAR greater than 1. RainyDay isn't configured to do a rainfall frequency analysis for this, but will write output scenarios. If you want a rainfall frequency analysis, set NPERYEAR to '1','false' or omit it from the .sst file!")
