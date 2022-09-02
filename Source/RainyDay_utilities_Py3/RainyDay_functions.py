@@ -1189,7 +1189,7 @@ def writeintensityfile(intenserain,filename,latrange,lonrange,intensetime):
     # create variables
     latitudes=dataset.createVariable('latitude',np.float32, ('outlat',))
     longitudes=dataset.createVariable('longitude',np.float32, ('outlon',))
-    stormtotals=dataset.createVariable('stormtotals',np.float32,('nstorms','outlat','outlon',))
+    stormtotals=dataset.createVariable('stormtotals',np.float32,('nstorms','outlat','outlon',),zlib=True,complevel=4,least_significant_digit=2)
     times=dataset.createVariable('time',np.float64, ('nstorms','outlat','outlon',))
 
 

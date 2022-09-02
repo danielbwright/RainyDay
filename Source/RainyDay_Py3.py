@@ -1826,6 +1826,7 @@ if FreqAnalysis:
         ncounts=np.random.choice(yrscount,(nsimulations,nrealizations),replace=True)   
         if calctype.lower()=='npyear' and np.mean(yrscount)<nperyear :   
             sys.exit("You specified to write multiple storms per year, but you specified a number that is too large relative to the resampling rate!")
+        ncounts[ncounts==0]=1
             
     whichstorms=np.empty((np.nanmax(ncounts),ncounts.shape[0],ncounts.shape[1]),dtype='int32')
     whichstorms[:]=-999
@@ -2150,7 +2151,6 @@ if FreqAnalysis:
                 rvs=sp.stats.genextreme.rvs(userdistr[2],loc=userdistr[0],scale=userdistr[1],size=maxrain.shape).astype('float32')
                 maxrain=maxrain*rvs
                 
-            
             
             # THIS ISN'T VERY ELEGANT
             maxx=np.empty((maxind.shape),dtype="int32")
