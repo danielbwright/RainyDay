@@ -61,19 +61,12 @@ from numba.types import int32
 import warnings
 warnings.filterwarnings("ignore")
 
-
-#==============================================================================
-# DIFFERENT PROJECTIONS
-#==============================================================================
-GEOG="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
-
-
 #==============================================================================
 # RAINFALL CLASS
 # THIS CONTAINS INFORMATION ABOUT THE SPECIFIED INPUT RAINFALL DATASET
 #==============================================================================
 class GriddedRainProperties(object):
-    def __init__(self,dataset,bndbox,subind,subextent,dimensions,subdimensions,spatialres,projection,timeres,timeunits,spatialunits,rainunits,nodata,notes):
+    def __init__(self,dataset,bndbox,subind,subextent,dimensions,subdimensions,spatialres,timeres,timeunits,spatialunits,rainunits,nodata,notes):
         self.dataset=dataset                #  INPUT RAINFALL DATA SOURCE (TMPA, STAGE IV, ETC.)
         self.bndbox=bndbox                  # COORDINATES OF FULL DATASET BOUNDING BOX (THIS SHOULD BE THE IN THE ORDER [WEST LON,EAST LON,SOUTH LAT,NOTH LAT])
         self.subind=subind                  # MATRIX INDICIES OF BOUNDING BOX (XMIN,XMAX,YMIN,YMAX)
@@ -81,7 +74,6 @@ class GriddedRainProperties(object):
         self.dimensions=dimensions          # WHAT ARE THE SPATIAL DIMENSIONS OF THE INPUT DATASET (NOTE: EVEN IF THE INPUT DATA YOU ARE USING IS FOR A SUBDOMAIN, THIS SHOULD BE THE DIMENSIONS OF THE FULL DATASET)
         self.subdimensions=subdimensions    # WHAT ARE THE DIMENSIONS OF THE SUBDOMAIN (IN THIS SCRIPT, THIS WILL BE RESET TO THE ACTUAL DIMENSION OF THE INPUT DATA, IF NEEDED)
         self.spatialres=spatialres          # WHAT IS THE SPATIAL RESOLUTION OF THE INPUT DATA [dx,dy]?  CURRENTLY THIS SCRIPT WILL ONLY HANDLE RECTANGULAR GRIDS IN DEGREES
-        self.projection=projection          # WHAT IS THE PROJECTION?  CURRENTLY ONLY HANDLES RECTANGULAR LAT/LON ('GEOG')
         self.timeunits=timeunits            # TEMPORAL UNITS.  CURRENTLY MUST BE MINUTES
         self.spatialunits=spatialunits      # SPATIAL UNITS (CURRENTLY MUST BE DEGREES) [Xres,Yres]
         self.rainunits=rainunits            # RAINFALL UNITS (CURRENTLY MUST BE MM/HR)
@@ -101,7 +93,6 @@ emptyprop=GriddedRainProperties('emptyprop',
                             [999, 999],
                             [999, 999],
                             [99.,99.],
-                            GEOG,
                             99.,
                             "minutes",
                             "degrees",
@@ -268,7 +259,7 @@ try:
         try:
             wsmaskshp=str(cardinfo[cardinfo[:,0]=="WATERSHEDSHP",1][0])
             print("You selected 'watershed' for 'POINTAREA', please note that if the watershed is not in a regular lat/lon projection such as EPSG4326/WGS 84, the results will likely be incorrect!")
-        except ImportError:
+        except IndexError:
             sys.exit("You specified 'watershed' for 'POINTAREA' but didn't specify 'WATERSHEDSHP'")            
     elif areatype.lower()=="point" or areatype.lower()=="grid":
         try:
@@ -403,8 +394,10 @@ if domain_type.lower()=='irregular':
         try:
             domainncf=str(cardinfo[cardinfo[:,0]=="DOMAINFILE",1][0])
             if os.path.isfile(domainncf)==False:
+                sys.exit("This capability isn't tested. Unclear whether changes are needed due to updating for CF compliance.")
                 sys.exit("Can't find the transposition domain NetCDF file!")  
             else:
+                sys.exit("This capability isn't tested. Unclear whether changes are needed due to updating for CF compliance.")
                 print("Domain NetCDF file found!")
                 ncfdom=True  
                 domainmask,domainlat,domainlon=RainyDay.readdomainfile(domainncf)
@@ -851,6 +844,28 @@ try:
     timeseparation=np.float32(cardinfo[cardinfo[:,0]=="TIMESEPARATION",1][0])     
 except Exception:
     timeseparation=0. 
+    
+islassiter=False   
+try:    
+    if np.any(np.core.defchararray.find(cardinfo[:,0],"ISLASSITER")>-1):
+        islassiter=cardinfo[cardinfo[:,0]=="ISLASSITER",1][0]
+        if islassiter.lower()!="false":
+            islassiter=True
+            print("Using Lassiter-style Netcdf files!")
+        else:
+            islassiter=False
+except Exception:
+    pass
+try:    
+    if np.any(np.core.defchararray.find(cardinfo[:,0],"ISFITZGERALD")>-1):
+        islassiter=cardinfo[cardinfo[:,0]=="ISFITZGERALD",1][0]
+        if islassiter.lower()!="false":
+            islassiter=True
+            print("Using FitzGerald-style Netcdf files!")
+        else:
+            islassiter=False
+except Exception:
+    pass        
   
 
 #==============================================================================
@@ -875,7 +890,9 @@ if CreateCatalog:
   
     
     # GET SUBDIMENSIONS, ETC. FROM THE NETCDF FILE RATHER THAN FROM RAINPROPERTIES  
-    rainprop.spatialres,rainprop.dimensions,rainprop.bndbox,rainprop.timeres,rainprop.nodata=RainyDay.rainprop_setup(flist[0])
+    rainprop.spatialres,rainprop.dimensions,rainprop.bndbox,rainprop.timeres,rainprop.nodata=RainyDay.rainprop_setup(flist[0],lassiterfile=islassiter)
+    spatres=rainprop.spatialres[0]
+    
     
     #==============================================================================
     # SET UP THE SUBGRID INFO
@@ -883,13 +900,6 @@ if CreateCatalog:
     # 'subgrid' defines the transposition domain
  
     rainprop.subextent,rainprop.subind,rainprop.subdimensions=RainyDay.findsubbox(inarea,rainprop)
-    
-    #subgrid,gx,gy=RainyDay.creategrids(rainprop)
-    ingridx,ingridy=np.meshgrid(np.arange(rainprop.subextent[0],rainprop.subextent[1]-rainprop.spatialres[0]/1000,rainprop.spatialres[0]),np.arange(rainprop.subextent[3],rainprop.subextent[2]+rainprop.spatialres[1]/1000,-rainprop.spatialres[1]))        
-
-    lonrange=ingridx[0,:]
-    latrange=ingridy[:,0]
-    
     if ncfdom and (np.any(domainmask.shape!=rainprop.subdimensions)):
         sys.exit("Something went terribly wrong :(")        # this shouldn't happen
 
@@ -935,7 +945,6 @@ else:
     #rainprop.subextent,rainprop.subind,rainprop.subdimensions=RainyDay.findsubbox(inarea,rainprop)
         
     rainprop.subind=np.array([0,len(lonrange)-1,len(latrange)-1,0],dtype='int32')
-    
     rainprop.dimensions=np.array([len(latrange),len(lonrange)],dtype='int32') 
     
     #catrain=catrain[:,:,rainprop.subind[3]:rainprop.subind[2]+1,rainprop.subind[0]:rainprop.subind[1]+1]
@@ -943,9 +952,6 @@ else:
     #lonrange=lonrange[rainprop.subind[3]:rainprop.subind[2]+1]
     
     rainprop.subdimensions=rainprop.dimensions
-
-    ingridx,ingridy=np.meshgrid(np.arange(rainprop.subextent[0],rainprop.subextent[1]-rainprop.spatialres[0]/1000,rainprop.spatialres[0]),np.arange(rainprop.subextent[3],rainprop.subextent[2]+rainprop.spatialres[1]/1000,-rainprop.spatialres[1]))        
-
 
 if int(duration*60/rainprop.timeres)<=0:
     sys.exit("it appears that you specified a duration shorter than the temporal resolution of the input data!")
@@ -958,7 +964,10 @@ elif timeseparation>0. and durcorrection==False:
 elif durcorrection:
     timeseparation=np.max([timeseparation+duration,catduration])
 
-
+spatres=rainprop.spatialres[0]
+ingridx,ingridy=np.meshgrid(np.arange(rainprop.subextent[0],rainprop.subextent[1]-spatres/1000.,spatres),np.arange(rainprop.subextent[3],rainprop.subextent[2]+spatres/1000.,-spatres))        
+lonrange=ingridx[0,:]
+latrange=ingridy[:,0]
 
 #============================================================================
 # Do the setup to run for specific times of day!
@@ -974,7 +983,7 @@ else:
     sys.exit("Restrictions to certain hours isn't currently tested or supported")
     try:
         sys.exit("need to fix this")
-        _,temptime,_,_=RainyDay.readnetcdf(flist[0],inbounds=rainprop.subind)
+        _,temptime,_,_=RainyDay.readnetcdf(flist[0],inbounds=rainprop.subind,lassiterfile=islassiter)
     except Exception:
         sys.exit("Can't find the input files necessary for setup to calculate time-of-day-specific IDF curves")
 
@@ -1004,7 +1013,7 @@ if areatype.lower()=="basin" or areatype.lower()=="watershed":
     if os.path.isfile(wsmaskshp)==False:
         sys.exit("can't find the basin shapefile!")
     else:
-        catmask=RainyDay.rastermask(wsmaskshp,GEOG,rainprop,'fraction')
+        catmask=RainyDay.rastermask(wsmaskshp,rainprop,'fraction')
         #catmask=catmask.reshape(ingridx.shape,order='F')
 
 elif areatype.lower()=="point":
@@ -1062,7 +1071,7 @@ elif areatype.lower()=="box":
         catmask=block_mean(catmask,25)          # this scheme is a bit of a numerical approximation but I doubt it makes much practical difference  
 else:
     sys.exit("unrecognized area type!")
-    
+
        
 # TRIM THE GRID DOWN
 csum=np.where(np.sum(catmask,axis=0)==0)
@@ -1102,7 +1111,7 @@ if ncfdom:
     domainmask=np.reshape(interp(grid_rainfall),ingridx.shape)    
 
 elif domain_type.lower()=='irregular' and shpdom and CreateCatalog:
-    domainmask=RainyDay.rastermask(domainshp,GEOG,rainprop,'simple').astype('float32')
+    domainmask=RainyDay.rastermask(domainshp,rainprop,'simple').astype('float32')
     #domainmask=catmask.reshape(ingridx.shape,order='F')
 elif domain_type.lower()=='rectangular':
     domainmask=np.ones((catmask.shape),dtype='float32')    
@@ -1174,14 +1183,15 @@ if CreateCatalog:
     # READ IN RAINFALL
     #==============================================================================
     filerange=range(0,len(flist))
-
+    #sys.exit("set back!!!")
+    #filerange=range(2759,2763)
+    
     start = time.time()
     for i in filerange: 
         infile=flist[i]
-        inrain,intime,_,_=RainyDay.readnetcdf(infile,inbounds=rainprop.subind)
+        inrain,intime,_,_=RainyDay.readnetcdf(infile,inbounds=rainprop.subind,lassiterfile=islassiter)
         inrain=inrain[hourinclude,:]
         intime=intime[hourinclude]
-        
         inrain[inrain<0.]=np.nan
         
         print('Processing file '+str(i+1)+' out of '+str(len(flist))+' ('+"{0:0.0f}".format(100*(i+1)/len(flist))+'%): '+infile.split('/')[-1])
@@ -1196,30 +1206,30 @@ if CreateCatalog:
             subtime=np.arange(raintime[-1],starttime,-timestep)[::-1]
             temparray=np.squeeze(np.nansum(rainarray[subtimeind,:],axis=1))
             
-
-            if domain_type=='irregular':
-                rainmax,ycat,xcat=RainyDay.catalogNumba_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask)
-            else:
-                rainmax,ycat,xcat=RainyDay.catalogNumba(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)
-
-            tempmin=np.min(catmax)
-            if rainmax>tempmin:
+            if np.any(np.greater(temparray,np.min(catmax))): # DBW-added this if statement on 10112022. It seems like this should speed things up!
+                if domain_type=='irregular':
+                    rainmax,ycat,xcat=RainyDay.catalogNumba_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask)
+                else:
+                    rainmax,ycat,xcat=RainyDay.catalogNumba(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)
+                
                 minind=np.argmin(catmax)
-                checksep=intime[k]-cattime[:,-1]
-                if (checksep<timeseparation).any():
-                    checkind=np.where(checksep<timeseparation)
-                    if rainmax>=catmax[checkind]:
-                        catmax[checkind]=rainmax
-                        cattime[checkind,:]=subtime
-                        catx[checkind]=xcat
-                        caty[checkind]=ycat
-                        catrain[checkind,:]=rainarray
-                else:  
-                    catmax[minind]=rainmax
-                    cattime[minind,:]=subtime
-                    catx[minind]=xcat
-                    caty[minind]=ycat
-                    catrain[minind,:]=rainarray
+                tempmin=catmax[minind]
+                if rainmax>tempmin:
+                    checksep=intime[k]-cattime[:,-1]
+                    if (checksep<timeseparation).any():
+                        checkind=np.where(checksep<timeseparation)
+                        if rainmax>=catmax[checkind]:
+                            catmax[checkind]=rainmax
+                            cattime[checkind,:]=subtime
+                            catx[checkind]=xcat
+                            caty[checkind]=ycat
+                            catrain[checkind,:]=rainarray
+                    else:  
+                        catmax[minind]=rainmax
+                        cattime[minind,:]=subtime
+                        catx[minind]=xcat
+                        caty[minind]=ycat
+                        catrain[minind,:]=rainarray
             
             rainarray[0:-1,:]=rainarray[1:int(catduration*60/rainprop.timeres),:]
             raintime[0:-1]=raintime[1:int(catduration*60/rainprop.timeres)]
@@ -1236,7 +1246,7 @@ if CreateCatalog:
     
     # WRITE CATALOG
     print("writing storm catalog...")
-    RainyDay.writecatalog(catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,nstorms,catmask,parameterfile,domainmask,timeresolution=rainprop.timeres)   
+    RainyDay.writecatalog(scenarioname,catrain,catmax,catx,caty,cattime,latrange,lonrange,catalogname,nstorms,catmask,parameterfile,domainmask,timeresolution=rainprop.timeres)   
         
 
 #################################################################################
@@ -1414,14 +1424,14 @@ if userdistr.all()!=False:
         tempmax=np.nanmax(np.nansum(catrain[i,:],axis=0))
         catrain[i,:]=catrain[i,:]/tempmax
 
-    
+
+
 #==============================================================================
 # Create kernel density smoother of transposition probability, even if you don't use it for resampling
 #==============================================================================
 print("calculating transposition probability map...")
 
 kx,ky=np.meshgrid(np.arange(0,rainprop.subdimensions[1]-maskwidth+1),np.arange(0,rainprop.subdimensions[0]-maskheight+1))
-
 kpositions=np.vstack([ky.ravel(),kx.ravel()])
 
 if domain_type!='irregular':
@@ -1492,7 +1502,9 @@ elif transpotype=='kernel' or rescaletype!='none':
 # DO YOU WANT TO CREATE DIAGNOSTIC PLOTS?
 #==============================================================================
 
-if DoDiagnostics:       
+if DoDiagnostics: 
+    for f in glob.glob(diagpath+'*.png'):
+        os.remove(f)      
     if areatype.lower()=="box":
         from shapely.geometry.polygon import LinearRing
         lons = [boxarea[0], boxarea[0], boxarea[1], boxarea[1]]
@@ -1500,8 +1512,8 @@ if DoDiagnostics:
         ring = LinearRing(list(zip(lons, lats)))
     elif areatype.lower()=="point":
         from shapely.geometry.polygon import LinearRing
-        lons = [ptlon, ptlon, ptlon+rainprop.spatialres[0], ptlon+rainprop.spatialres[0]]
-        lats = [ptlat-rainprop.spatialres[1], ptlat,ptlat, ptlat-rainprop.spatialres[1]]
+        lons = [ptlon-rainprop.spatialres[0]/2., ptlon-rainprop.spatialres[0]/2., ptlon+rainprop.spatialres[0]/2., ptlon+rainprop.spatialres[0]/2.]
+        lats = [ptlat-rainprop.spatialres[1]/2., ptlat+rainprop.spatialres[1]/2.,ptlat+rainprop.spatialres[1]/2., ptlat-rainprop.spatialres[1]/2.]
         ring = LinearRing(list(zip(lons, lats)))
 
     print("preparing diagnostic plots...")
@@ -1521,7 +1533,6 @@ if DoDiagnostics:
         orientation='horizontal'
     else:
         orientation='vertical'
-    
     proj = ccrs.PlateCarree()
 
     
@@ -1544,24 +1555,31 @@ if DoDiagnostics:
     outerextent=np.array(rainprop.subextent,dtype='float32')
     coast_10m = cfeature.NaturalEarthFeature("physical", "land", "10m", edgecolor="k", facecolor="0.8")
     
-    # PLOT STORM OCCURRENCE PROBABILITIES-there is a problem with the "alignment of the raster and the storm locations
-    print("     Creating storm probability map...")
-    #plot_kernel=np.column_stack([pltkernel,np.zeros((pltkernel.shape[0],catmask.shape[1]-pltkernel.shape[1]))])
-    #plot_kernel=np.row_stack([plot_kernel,np.zeros((catmask.shape[0]-pltkernel.shape[0],plot_kernel.shape[1]))])
-
-    padleft=math.floor(maskwidth/2)
-    padright=math.ceil(maskwidth/2)-1
-    plot_kernel=np.column_stack([np.zeros((pltkernel.shape[0],padleft)),pltkernel,np.zeros((pltkernel.shape[0],padright))])
-
-    padtop=math.floor(maskheight/2)
-    padbottom=math.ceil(maskheight/2)-1
-    plot_kernel=np.row_stack([np.zeros((padtop,plot_kernel.shape[1])),plot_kernel,np.zeros((padbottom,plot_kernel.shape[1]))])
-
     states_provinces = cfeature.NaturalEarthFeature(
         category='cultural',
         name='admin_1_states_provinces_lines',
         scale='50m',
         facecolor='none')
+    
+    # PLOT STORM OCCURRENCE PROBABILITIES-there is a problem with the "alignment of the raster and the storm locations
+    print("     Creating storm probability map...")
+    #plot_kernel=np.column_stack([pltkernel,np.zeros((pltkernel.shape[0],catmask.shape[1]-pltkernel.shape[1]))])
+    #plot_kernel=np.row_stack([plot_kernel,np.zeros((catmask.shape[0]-pltkernel.shape[0],plot_kernel.shape[1]))])
+
+    #padleft=math.floor(maskwidth/2)-1
+    #padright=math.ceil(maskwidth/2)
+    padleft=0
+    padright=maskwidth-1
+    
+    plot_kernel=np.column_stack([np.zeros((pltkernel.shape[0],padleft)),pltkernel,np.zeros((pltkernel.shape[0],padright))])
+
+    #padtop=math.floor(maskheight/2)
+    #padbottom=math.ceil(maskheight/2)-1
+    padtop=0
+    padbottom=maskheight-1
+    
+    
+    plot_kernel=np.row_stack([np.zeros((padtop,plot_kernel.shape[1])),plot_kernel,np.zeros((padbottom,plot_kernel.shape[1]))])
 
     xplot_kernel=xr.Dataset(
         data_vars=dict(plot_kernel=(["y","x"],plot_kernel)),
@@ -1570,6 +1588,7 @@ if DoDiagnostics:
             lon=(["x"],lonrange)),
         attrs=dict(description="diagnostic plotting of the storm probability density"),
     )
+    
     
     fig = plt.figure(figsize=(figsizex,figsizey))
     ax=plt.axes(projection=proj)
@@ -1582,13 +1601,10 @@ if DoDiagnostics:
     if domain_type.lower()=="irregular" and os.path.isfile(domainshp):
         ax.add_feature(domain_feature,edgecolor="black",facecolor="None")
     xplot_kernel.plot_kernel.plot(x="lon",y="lat",yincrease=True,cmap='Reds',cbar_kwargs={'orientation':orientation,'label':"Probability of storm occurrence [-]"})
+    #xplot_kernel.pltkernel.plot(x="lon",y="lat",yincrease=True,cmap='Reds',cbar_kwargs={'orientation':orientation,'label':"Probability of storm occurrence [-]"})
+        
     plt.scatter(lonrange[catx]+(maskwidth/2)*rainprop.spatialres[0],latrange[caty]-(maskheight/2)*rainprop.spatialres[1],s=catmax/2,facecolors='k',edgecolors='none',alpha=0.75)
 
-    #plt.show()
-    
-    #ax.add_feature(cfeature.LAND)
-    #ax.add_feature(cfeature.COASTLINE)
-    #ax.add_feature(coast_10m)
     ax.add_feature(states_provinces)
     ax.set_xticks(np.linspace(outerextent[0],outerextent[1],2))
     lon_formatter = cticker.LongitudeFormatter()
@@ -1600,16 +1616,16 @@ if DoDiagnostics:
     ax.set(xlabel=None,ylabel=None)
     ax.yaxis.set_major_formatter(lat_formatter)
     
-    ax.set_title('Prob. of storm occurrence from\n'+catalogname.split('/')[-1])
+    ax.set_title('Prob. of storm occurrence from\n'+catalogname.split('/')[-1]+'\nNOTE: The prob. map may not extend to lower/right edges. That is not a mistake!')
     #ax.axes.set_title(xlabel=None)
     
     plt.savefig(diagpath+'ProbabilityOfStorms.png',dpi=250)
     plt.close()   
     
-
     
     # PLOT AVERAGE STORM RAINFALL
     print ("     Creating mean precipitation map...")
+    outerextent=np.array(rainprop.subextent,dtype='float32')
     avgrain=np.nansum(catrain,axis=(0,1))/nstorms*rainprop.timeres/60.
     xplot_avgrain=xr.Dataset(
         data_vars=dict(avgrain=(["y","x"],avgrain)),
@@ -1805,7 +1821,7 @@ if FreqAnalysis:
         lrate=len(catmax)/nyears*FrequencySens                  
         ncounts=np.random.poisson(lrate,(nsimulations,nrealizations))
         cntr=0
-        ncounts[ncounts==0]=1
+        #ncounts[ncounts==0]=1
         if calctype.lower()=='npyear' and lrate<nperyear:   
             sys.exit("You specified to write multiple storms per year, but you specified a number that is too large relative to the resampling rate!")
     elif samplingtype.lower()=='negbinom':
@@ -1826,10 +1842,10 @@ if FreqAnalysis:
         ncounts=np.random.choice(yrscount,(nsimulations,nrealizations),replace=True)   
         if calctype.lower()=='npyear' and np.mean(yrscount)<nperyear :   
             sys.exit("You specified to write multiple storms per year, but you specified a number that is too large relative to the resampling rate!")
-        ncounts[ncounts==0]=1
+        #ncounts[ncounts==0]=1
             
     whichstorms=np.empty((np.nanmax(ncounts),ncounts.shape[0],ncounts.shape[1]),dtype='int32')
-    whichstorms[:]=-999
+    whichstorms[:]=-9999
     
     if rotation==True:
         randangle=(maxangle-minangle)*np.random.random_sample(((np.nanmax(ncounts),ncounts.shape[0],ncounts.shape[1])))+minangle
@@ -2123,7 +2139,26 @@ if FreqAnalysis:
             #arfrand[arfrand>1.5]=1.0
             arfrand[arfrand>arflimit]=arfmed
             whichrain=np.multiply(whichrain,arfrand)
-    
+            
+            
+    # modified by DBW to account for k=0 situations, 9/22/2022
+    nostorm_index=np.equal(whichstorms,-9999)
+    whichrain[nostorm_index]=-9999.
+    whichx[nostorm_index]=-9999
+    whichy[nostorm_index]=-9999
+    try:
+        whichstep[nostorm_index]=-9999
+    except NameError:
+        pass
+    try:
+        whichmultiplier[nostorm_index]=-9999.
+    except NameError:
+        pass  
+    try:
+        whichtimeind[nostorm_index]=-9999
+    except NameError:
+        pass  
+            
     
     # HERE ARE THE ANNUAL MAXIMA!!!
     if areatype.lower()=="pointlist":
@@ -2135,7 +2170,6 @@ if FreqAnalysis:
             if calctype.lower()=='ams':
                 maxrain=np.nanmax(whichrain[:,:,:,pt],axis=0)
                 
-                
             elif calctype.lower()=='pds':
                 temprain=np.squeeze(whichrain[:,:,:,pt])
                 temppds=temprain.reshape(-1, temprain.shape[-1])
@@ -2145,17 +2179,17 @@ if FreqAnalysis:
             # PULL OUT THE CORRESPONDING TRANSPOSITION INFORMATION
             maxind=np.nanargmax(whichrain[:,:,:,pt],axis=0)
             
-            
-            # HERE THE OPTIONAL USER SPECIFIED INTENSITY DISTRIBUTION IS APPLIED    
-            if userdistr.all()!=False:
-                rvs=sp.stats.genextreme.rvs(userdistr[2],loc=userdistr[0],scale=userdistr[1],size=maxrain.shape).astype('float32')
-                maxrain=maxrain*rvs
-                
+            #added for k=0 catching, DBW 9/22/22
+            maxind[np.equal(maxrain,-9999.)]=-9999
+        
             
             # THIS ISN'T VERY ELEGANT
             maxx=np.empty((maxind.shape),dtype="int32")
             maxy=np.empty((maxind.shape),dtype="int32")
             maxstorm=np.empty((maxind.shape),dtype="int32")
+            maxx[:]=-9999
+            maxy[:]=-9999
+            maxstorm[:]=-9999
             #if rescaletype=='stochastic' or rescaletype=='deterministic':
             #    maxmultiplier=np.empty((maxind.shape),dtype="float32") 
                 
@@ -2179,19 +2213,15 @@ if FreqAnalysis:
                 
         if alllevels==False:
             reducedlevind=[]
-            def find_nearest(array,value):
-                idx = (np.abs(array-value)).argmin()
-                return idx
-            
             for i in range(0,len(speclevels)):
-                reducedlevind.append(find_nearest(returnperiod,speclevels[i]))  
+                reducedlevind.append(RainyDay.find_nearest(returnperiod,speclevels[i]))  
             
             returnperiod=returnperiod[reducedlevind]
             sortrain=sortrain[reducedlevind,:]
             exceedp=exceedp[reducedlevind]
                 
     else:
-        if calctype!='npyear':          # this isn't very elegant!
+        if calctype=='ams' or calctype=='pds':          # this isn't very elegant!
             if calctype.lower()=='ams':
                 maxrain=np.nanmax(whichrain[:,:,:,pt],axis=0)
                 maxind=np.nanargmax(whichrain,axis=0)
@@ -2200,6 +2230,10 @@ if FreqAnalysis:
                 temppds=temprain.reshape(-1, temprain.shape[-1])
                 maxrain=np.sort(temppds,axis=0)[-nsimulations:,:]
                 maxind=np.nanargmax(whichrain,axis=0)
+            
+            #added for k=0 catching, DBW 9/22/22
+            maxind[np.equal(maxrain,-9999.)]=-9999
+            
             #elif calctype.lower()=='npyear':
             #    temprain=np.squeeze(whichrain)
             #    maxrain=np.sort(temprain,axis=0)
@@ -2207,12 +2241,13 @@ if FreqAnalysis:
                 
                 #maxrain=np.sort(temprain,axis=0)[-5:,:]
                 #maxind=np.argsort(temprain,axis=0)[-5:,:]
-                
+      
             
             # HERE THE OPTIONAL USER SPECIFIED INTENSITY DISTRIBUTION IS APPLIED    
             if userdistr.all()!=False:
                 rvs=sp.stats.genextreme.rvs(userdistr[2],loc=userdistr[0],scale=userdistr[1],size=maxrain.shape).astype('float32')
                 maxrain=maxrain*rvs
+                maxrain[np.equal(maxind,-9999)]=-9999.
                 
             # PULL OUT THE CORRESPONDING TRANSPOSITION INFORMATION
             
@@ -2220,31 +2255,35 @@ if FreqAnalysis:
             # THIS ISN'T VERY ELEGANT
             maxx=np.empty((maxind.shape),dtype="int32")
             maxy=np.empty((maxind.shape),dtype="int32")
+            maxx[:]=-9999
+            maxy[:]=-9999
             maxstorm=np.empty((maxind.shape),dtype="int32")
+            maxstorm[:]=-9999
             if arfcorrection:
                 maxstep=np.empty((maxind.shape),dtype="int32")
-                
+                maxstep[:]=-9999
             if rotation:
                 maxangles=np.empty((maxind.shape),dtype="float32")
                 sortangle=np.empty((maxind.shape),dtype="float32")
-                
+                maxangles[:]=-9999.
+                sortangle[:]=-9999.
             if rescaletype=='stochastic' or rescaletype=='deterministic' or rescaletype=='dimensionless':
                 maxmultiplier=np.empty((maxind.shape),dtype="float32") 
                 sortmultiplier=np.empty((maxind.shape),dtype="float32")
-                
+                maxmultiplier[:]=-9999.
+                sortmultiplier[:]=-9999.
                 
             for i in range(0,np.max(ncounts)):
-                if calctype.lower()=='ams' or calctype.lower()=='pds':
-                    maxx[maxind==i]=np.squeeze(whichx[i,np.squeeze(maxind==i)])
-                    maxy[maxind==i]=np.squeeze(whichy[i,np.squeeze(maxind==i)])
-                    maxstorm[maxind==i]=np.squeeze(whichstorms[i,np.squeeze(maxind==i)])
-                    if arfcorrection:
-                        maxstep[maxind==i]=np.squeeze(whichstep[i,np.squeeze(maxind==i)])
-                    
-                    if rotation:
-                        maxangles[maxind==i]=randangle[i,maxind==i]
-                    if rescaletype=='stochastic' or rescaletype=='deterministic' or rescaletype=='dimensionless':
-                        maxmultiplier[maxind==i]=np.squeeze(whichmultiplier[i,maxind==i])
+                maxx[maxind==i]=np.squeeze(whichx[i,np.squeeze(maxind==i)])
+                maxy[maxind==i]=np.squeeze(whichy[i,np.squeeze(maxind==i)])
+                maxstorm[maxind==i]=np.squeeze(whichstorms[i,np.squeeze(maxind==i)])
+                if arfcorrection:
+                    maxstep[maxind==i]=np.squeeze(whichstep[i,np.squeeze(maxind==i)])
+                
+                if rotation:
+                    maxangles[maxind==i]=randangle[i,maxind==i]
+                if rescaletype=='stochastic' or rescaletype=='deterministic' or rescaletype=='dimensionless':
+                    maxmultiplier[maxind==i]=np.squeeze(whichmultiplier[i,maxind==i])
     #            elif calctype.lower()=='npyear':
     #                sys.exit("having problems here")
     #                for stm in range(0,nperyear):
@@ -2317,12 +2356,8 @@ if FreqAnalysis:
                 
             if alllevels==False:
                 reducedlevind=[]
-                def find_nearest(array,value):
-                    idx = (np.abs(array-value)).argmin()
-                    return idx
-                
                 for i in range(0,len(speclevels)):
-                    reducedlevind.append(find_nearest(returnperiod,speclevels[i]))  
+                    reducedlevind.append(RainyDay.find_nearest(returnperiod,speclevels[i]))  
                 
                 returnperiod=returnperiod[reducedlevind]
                 sortrain=sortrain[reducedlevind,:]
@@ -2435,9 +2470,9 @@ if FreqAnalysis:
             freqanalysis_min=np.row_stack((coordline,freqanalysis_min))
             freqanalysis_max=np.row_stack((coordline,freqanalysis_max))
             
-            np.savetxt(FreqFile_mean,freqanalysis_mean,delimiter=',',header='prob.exceed,returnperiod,meanrain',fmt='%6.3f',comments='#',footer=ptlistname)
-            np.savetxt(FreqFile_min,freqanalysis_min,delimiter=',',header='prob.exceed,returnperiod,minrain',fmt='%6.3f',comments='#',footer=ptlistname)
-            np.savetxt(FreqFile_max,freqanalysis_max,delimiter=',',header='prob.exceed,returnperiod,maxrain',fmt='%6.3f',comments='#',footer=ptlistname)
+            np.savetxt(FreqFile_mean,freqanalysis_mean,delimiter=',',header='prob.exceed,returnperiod,meanrain',fmt='%6.2f',comments='#',footer=ptlistname)
+            np.savetxt(FreqFile_min,freqanalysis_min,delimiter=',',header='prob.exceed,returnperiod,minrain',fmt='%6.2f',comments='#',footer=ptlistname)
+            np.savetxt(FreqFile_max,freqanalysis_max,delimiter=',',header='prob.exceed,returnperiod,maxrain',fmt='%6.2f',comments='#',footer=ptlistname)
             
         else:
             if spreadtype=='ensemble':
@@ -2449,7 +2484,7 @@ if FreqAnalysis:
         
             freqanalysis=np.column_stack((exceedp,returnperiod,spreadmin,np.nanmean(sortrain,1),spreadmax))
             
-            np.savetxt(FreqFile,freqanalysis,delimiter=',',header='prob.exceed,returnperiod,minrain,meanrain,maxrain',fmt='%6.3f',comments='')
+            np.savetxt(FreqFile,freqanalysis,delimiter=',',header='prob.exceed,returnperiod,minrain,meanrain,maxrain',fmt='%6.2f',comments='')
             
             import matplotlib.patches as mpatches
             from matplotlib.font_manager import FontProperties
@@ -2501,10 +2536,12 @@ if FreqAnalysis:
     # STEP 4 (OPTIONAL): WRITE RAINFALL SCENARIOS
     #################################################################################
 
-    if deterministic:
-        RainyDay.writemaximized(wd+'/'+scenarioname+'/'+scenarioname+'_maximizedstorm.nc',maxstm_rain,maxstm_avgrain,maxstm_ts,max_trnsx,max_trnsy,maxstm_time,subrangelat,subrangelon)
-       
+    subrangelat=latrange[ymin:ymax+1]
+    subrangelon=lonrange[xmin:xmax+1]
     
+    if deterministic:
+        RainyDay.writemaximized(scenarioname,wd+'/'+scenarioname+'/'+scenarioname+'_maximizedstorm.nc',maxstm_rain,maxstm_avgrain,maxstm_ts,max_trnsx,max_trnsy,maxstm_time,subrangelat,subrangelon)
+       
     if Scenarios and calctype!='npyear':
         print("writing spacetime precipitation scenarios...")
         
@@ -2541,7 +2578,7 @@ if FreqAnalysis:
     
                 for j in range(0,len(tlist)):
                     print('Pre-pending precipitation with file '+tlist[j])
-                    inrain,intime,_,_=RainyDay.readnetcdf(tlist[j],inbounds=rainprop.subind)
+                    inrain,intime,_,_=RainyDay.readnetcdf(tlist[j],inbounds=rainprop.subind,lassiterfile=islassiter)
                     inrain[inrain<0.]=np.nan
                     
                     for k in range(0,int(24*60/rainprop.timeres)):
@@ -2553,11 +2590,7 @@ if FreqAnalysis:
             tlen=0
             
         if alllevels:
-            def find_nearest(array,value):
-                idx = (np.abs(array-value)).argmin()
-                return idx
-                
-            minind=find_nearest(returnperiod,RainfallThreshYear)
+            minind=RainyDay.find_nearest(returnperiod,RainfallThreshYear)
             writemax=sortrain[minind:,:]
             writex=sortx[minind:,:]
             writey=sorty[minind:,:]
@@ -2619,8 +2652,6 @@ if FreqAnalysis:
             
             outrain[:,:,np.isclose(trimmask,0.)]=-9999.               # this line produced problems in CUENCAS CONVERSIONS :(
             writename=WriteName+'_SSTrealization'+str(rlz+1)+'.nc'
-            subrangelat=latrange[ymin:ymax+1]
-            subrangelon=lonrange[xmin:xmax+1]
             
             if arfcorrection:
                 temprain=np.empty((outrain.shape[0],writetimes.shape[2],outrain.shape[2],outrain.shape[3]),dtype='float32')
@@ -2631,23 +2662,17 @@ if FreqAnalysis:
                 
             
             #print "need to write angles to the realization files"
-            RainyDay.writerealization(rlz,nrealizations,writename,outrain,writemax[:,rlz],np.squeeze(writestorm[:,rlz]),writeperiod,np.squeeze(writex[:,rlz]),np.squeeze(writey[:,rlz]),outtime,subrangelat,subrangelon,whichorigstorm[:,rlz])
+            RainyDay.writerealization(scenarioname,rlz,nrealizations,writename,outrain,writemax[:,rlz],np.squeeze(writestorm[:,rlz]),writeperiod,np.squeeze(writex[:,rlz]),np.squeeze(writey[:,rlz]),outtime,subrangelat,subrangelon,whichorigstorm[:,rlz])
     
     elif calctype=='npyear':
         # this code is adapted from Guo Yu's version of RainyDay
         # this isn't pretty, but it works. It doesn't have all the functionality of the "1 per year" scenarios above.
-
-        subrangelat=latrange[ymin:ymax+1]
-        subrangelon=lonrange[xmin:xmax+1]
+        print("Writing top N precipitation scenarios")
             
         if rescaletype=='none':
             whichmultiplier=np.ones_like(whichrain)
 
-        from netCDF4 import Dataset
-
         for i in range(0,nrealizations):
-            filename=WriteName+'_SSTrealization'+str(i+1)+'_Top'+str(nperyear)+'.nc'
-            
             outrain_large = np.zeros((nsimulations,nperyear,int(catduration),maskheight,maskwidth),dtype='float32')
             outrain_large[:] = -9999.
             outtime_large =  np.empty((nsimulations,nperyear,int(catduration)),dtype='datetime64[m]')
@@ -2684,49 +2709,48 @@ if FreqAnalysis:
                     
                     outrain_large[j,k,:,:,:] = SST_rain[:]
                     outtime_large[j,k,:] = cattime[sst_storm,:]
-        
-        
-            print("Writing top N precipitation scenarios")
             
-            dataset=Dataset(filename, 'w', format='NETCDF4')
+            writename=WriteName+'_SSTrealization'+str(i+1)+'.nc'
+            RainyDay.writerealization_nperyear(scenarioname,writename,i,nperyear,nrealizations,outrain_large,outtime_large,subrangelat,subrangelon,rlz_order,nsimulations)
+    
+            #### THIS COMMENTED SECTION CAN BE DELETED ONCE 'writerealization_nperyear()' is tested
+            # dataset=Dataset(filename, 'w', format='NETCDF4')
         
-            # create dimensions
+            # # create dimensions
         
-            outlats=dataset.createDimension('outlat',len(subrangelat))
-            outlons=dataset.createDimension('outlon',len(subrangelon))
-            time=dataset.createDimension('time',outtime_large.shape[2])
-            nyears=dataset.createDimension('nyears',nsimulations)
-            topN=dataset.createDimension('topN',nperyear)
+            # outlats=dataset.createDimension('outlat',len(subrangelat))
+            # outlons=dataset.createDimension('outlon',len(subrangelon))
+            # time=dataset.createDimension('time',outtime_large.shape[2])
+            # nyears=dataset.createDimension('nyears',nsimulations)
+            # topN=dataset.createDimension('topN',nperyear)
         
         
-            # create variables
-            times=dataset.createVariable('time',np.float64, ('nyears','topN','time'))
-            latitudes=dataset.createVariable('latitude',np.float32, ('outlat'))
-            longitudes=dataset.createVariable('longitude',np.float32, ('outlon'))
-            rainrate=dataset.createVariable('rainrate',np.float32,('nyears','topN','time','outlat','outlon'),zlib=True,complevel=4,least_significant_digit=2)
-            top_event=dataset.createVariable('top_event',np.int16, ('nyears'))
-            # Global Attributes
+            # # create variables
+            # times=dataset.createVariable('time',np.float64, ('nyears','topN','time'))
+            # latitudes=dataset.createVariable('latitude',np.float32, ('outlat'))
+            # longitudes=dataset.createVariable('longitude',np.float32, ('outlon'))
+            # rainrate=dataset.createVariable('rainrate',np.float32,('nyears','topN','time','outlat','outlon'),zlib=True,complevel=4,least_significant_digit=2)
+            # top_event=dataset.createVariable('top_event',np.int16, ('nyears'))
+            # # Global Attributes
         
-            dataset.history = 'Created ' + str(datetime.now())
+            # dataset.history = 'Created ' + str(datetime.now())
            
-            # Variable Attributes (time since 1970-01-01 00:00:00.0 in numpys)
+            # # Variable Attributes (time since 1970-01-01 00:00:00.0 in numpys)
         
-            rainrate.units = 'mm/h'
-            times.units = 'minutes since 1970-01-01 00:00.0'
-            times.calendar = 'gregorian'
+            # rainrate.units = 'mm/h'
+            # times.units = 'minutes since 1970-01-01 00:00.0'
+            # times.calendar = 'gregorian'
         
-            # fill the netcdf file
-            latitudes[:]=subrangelat
-            longitudes[:]=subrangelon
-            rainrate[:]=outrain_large 
-            times[:]=outtime_large
-            n_evnet = np.nansum(rlz_order>=0,axis=0)
-            n_evnet[n_evnet>=nperyear]=nperyear
-            top_event[:]= n_evnet
+            # # fill the netcdf file
+            # latitudes[:]=subrangelat
+            # longitudes[:]=subrangelon
+            # rainrate[:]=outrain_large 
+            # times[:]=outtime_large
+            # n_evnet = np.nansum(rlz_order>=0,axis=0)
+            # n_evnet[n_evnet>=nperyear]=nperyear
+            # top_event[:]= n_evnet
            
-            dataset.close()
-        
-
+            # dataset.close()
 else:
     print("skipping the frequency analysis!")
     
