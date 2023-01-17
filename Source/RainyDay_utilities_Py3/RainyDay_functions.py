@@ -1034,8 +1034,8 @@ def writerealization(scenarioname,rlz,nrealizations,writename,outrain,writemax,w
 #==============================================================================    
 def writerealization_nperyear(scenarioname,writename,rlz,nperyear,nrealizations,outrain_large,outtime_large,subrangelat,subrangelon,rlz_order,nsimulations):
     # SAVE outrain AS NETCDF FILE
-    filename=writename+'_SSTrealization'+str(rlz+1)+'_Top'+str(nperyear)+'.nc'
-    dataset=Dataset(filename, 'w', format='NETCDF4')
+    #filename=writename+'_SSTrealization'+str(rlz+1)+'_Top'+str(nperyear)+'.nc'
+    dataset=Dataset(scenarioname, 'w', format='NETCDF4')
 
     # create dimensions
     outlats=dataset.createDimension('latitude',len(subrangelat))
@@ -1054,7 +1054,7 @@ def writerealization_nperyear(scenarioname,writename,rlz,nperyear,nrealizations,
     # Variable Attributes (time since 1970-01-01 00:00:00.0 in numpys)
     latitudes.units = 'degrees_north'
     longitudes.units = 'degrees_east'
-    rainrate.units = 'mm/hr'
+    rainrate.units = 'mm hr^-1'
     times.units = 'minutes since 1970-01-01 00:00.0'
     times.calendar = 'gregorian'
     top_event.units='dimensionless'
@@ -1067,7 +1067,7 @@ def writerealization_nperyear(scenarioname,writename,rlz,nperyear,nrealizations,
     
     
     # Global Attributes
-    dataset.description = 'SST Rainfall Scenarios Realization: '+str(rlz+1)+' of '+str(nrealizations)
+    dataset.description = 'NPERYEAR-type SST Rainfall Scenarios Realization: '+str(rlz+1)+' of '+str(nrealizations)
     dataset.history = 'Created ' + str(datetime.now())
     dataset.source = 'Realization '+str(rlz)+' from scenario '+scenarioname
     dataset.missing='-9999.'
@@ -1108,7 +1108,7 @@ def writemaximized(scenarioname,writename,outrain,writemax,write_ts,writex,write
     # Variable Attributes (time since 1970-01-01 00:00:00.0 in numpys)
     latitudes.units = 'degrees_north'
     longitudes.units = 'degrees_east'
-    rainrate.units = 'mm/hr'
+    rainrate.units = 'mm hr^-1'
     times.units = 'minutes since 1970-01-01 00:00.0'
     times.calendar = 'gregorian'
     xlocation.units='dimensionless'
@@ -1319,7 +1319,7 @@ def writecatalog(scenarioname,catrain,catmax,catx,caty,cattime,latrange,lonrange
     # Variable Attributes (time since 1970-01-01 00:00:00.0 in numpys)
     latitudes.units = 'degrees_north'
     longitudes.units = 'degrees_east'
-    rainrate.units = 'mm/hr'
+    rainrate.units = 'mm hr^-1'
     basinrainfall.units='mm'
     times.units = 'minutes since 1970-01-01 00:00.0'
     times.calendar = 'gregorian'
@@ -1621,6 +1621,37 @@ def readrealization(rfile):
     
     infile.close()
     return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outreturnperiod,outstormnumber,origstormnumber,timeunits
+
+
+#==============================================================================
+# READ NPERYEAR REALIZATION
+#==============================================================================
+def readrealization_nperyear(rfile):
+    infile=Dataset(rfile,'r')
+    if 'rainrate' in infile.variables.keys():
+        oldfile=True
+    else:
+        oldfile=False
+        
+    if oldfile:
+        outrain=np.array(infile.variables['rainrate'][:])
+    else:
+        outrain=np.array(infile.variables['precrate'][:])[:,:,::-1,:]
+    outtime=np.array(infile.variables['time'][:],dtype='datetime64[m]')
+    outlatitude=np.array(infile.variables['latitude'][:])
+    outlongitude=np.array(infile.variables['longitude'][:])
+    #outlocx=np.array(infile.variables['xlocation'][:])
+    #outlocy=np.array(infile.variables['ylocation'][:])
+    #outmax=np.array(infile.variables['basinrainfall'][:])
+    #outreturnperiod=np.array(infile.variables['returnperiod'][:])
+    #outstormnumber=np.array(infile.variables['stormnumber'][:])
+    #origstormnumber=np.array(infile.variables['original_stormnumber'][:])
+    #outstormtime=np.array(infile.variables['stormtimes'][:],dtype='datetime64[m]')
+    timeunits=infile.variables['time'].units
+    
+    infile.close()
+    return outrain,outtime,outlatitude,outlongitude,timeunits
+
 
 
 #==============================================================================

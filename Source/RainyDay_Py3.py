@@ -61,6 +61,9 @@ from numba.types import int32
 import warnings
 warnings.filterwarnings("ignore")
 
+import tracemalloc
+tracemalloc.start()
+
 #==============================================================================
 # RAINFALL CLASS
 # THIS CONTAINS INFORMATION ABOUT THE SPECIFIED INPUT RAINFALL DATASET
@@ -2651,7 +2654,7 @@ if FreqAnalysis:
                     outrain=RainyDay.SSTspin_write_v2(catrain,np.squeeze(writex[:,rlz]),np.squeeze(writey[:,rlz]),np.squeeze(writestorm[:,rlz]),nanmask,maskheight,maskwidth,precat,cattime[:,-1],rainprop,spin=prependrain,flexspin=False,samptype=transpotype,cumkernel=cumkernel,rotation=rotation,domaintype=domain_type)
             
             outrain[:,:,np.isclose(trimmask,0.)]=-9999.               # this line produced problems in CUENCAS CONVERSIONS :(
-            writename=WriteName+'_SSTrealization'+str(rlz+1)+'.nc'
+            writename=WriteName+'_SSTrealizationAMS_rlz'+str(rlz+1)+'.nc'
             
             if arfcorrection:
                 temprain=np.empty((outrain.shape[0],writetimes.shape[2],outrain.shape[2],outrain.shape[3]),dtype='float32')
@@ -2673,6 +2676,7 @@ if FreqAnalysis:
             whichmultiplier=np.ones_like(whichrain)
 
         for i in range(0,nrealizations):
+            print("writing scenarios for realization "+str(i+1)+"/"+str(nrealizations))
             outrain_large = np.zeros((nsimulations,nperyear,int(catduration),maskheight,maskwidth),dtype='float32')
             outrain_large[:] = -9999.
             outtime_large =  np.empty((nsimulations,nperyear,int(catduration)),dtype='datetime64[m]')
@@ -2710,7 +2714,7 @@ if FreqAnalysis:
                     outrain_large[j,k,:,:,:] = SST_rain[:]
                     outtime_large[j,k,:] = cattime[sst_storm,:]
             
-            writename=WriteName+'_SSTrealization'+str(i+1)+'.nc'
+            writename=WriteName+'_SSTrealization'+ str(n_largest) +'PYEAR_rlz'+str(i+1)+'.nc'
             RainyDay.writerealization_nperyear(scenarioname,writename,i,nperyear,nrealizations,outrain_large,outtime_large,subrangelat,subrangelon,rlz_order,nsimulations)
     
             #### THIS COMMENTED SECTION CAN BE DELETED ONCE 'writerealization_nperyear()' is tested
@@ -2756,7 +2760,7 @@ else:
     
 import time     # reimporting due to goofy issue with nperyear writing above      
 end = time.time()   
-print("RainyDay has successfully finished!\n")
+print("RainyDay has successfully finished!")
 print("Elapsed time: "+"{0:0.2f}".format((end - start)/60.)+" minutes")
 
    
