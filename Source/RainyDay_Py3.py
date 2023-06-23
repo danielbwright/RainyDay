@@ -128,8 +128,8 @@ print('''Welcome to RainyDay, a framework for coupling remote sensing precipitat
 start = time.time()
 parameterfile='ttt'
 try:
-    parameterfile=np.str(sys.argv[1])
-    #parameterfile='/Users/daniel/Google_Drive/Presentations/MyPresentations/WisconsinRainfallProject/Wisconsin_24hrIDF_Madison.sst'
+    #parameterfile=np.str(sys.argv[1])
+    parameterfile='/Users/daniel/Google_Drive/RainyDay2/Pranavesh_Testing/Madison_example_PP.sst'
 except:
     sys.exit("You didn't specify an input ('.sst') file!")
 
@@ -2520,7 +2520,6 @@ if FreqAnalysis:
             else:
                 lowerlimit=100.
                     
-                    
             plt.ylim(lowerlimit,upperlimit)
             ax.set_xlabel('Annual Exceed. Prob. [-]\n1/(Return Period) [year]')
             ax.set_ylabel('Precip. Depth [mm]')
@@ -2717,6 +2716,8 @@ if FreqAnalysis:
             writename=WriteName+'_SSTrealization'+ str(n_largest) +'PYEAR_rlz'+str(i+1)+'.nc'
             RainyDay.writerealization_nperyear(scenarioname,writename,i,nperyear,nrealizations,outrain_large,outtime_large,subrangelat,subrangelon,rlz_order,nsimulations)
     
+    
+
             #### THIS COMMENTED SECTION CAN BE DELETED ONCE 'writerealization_nperyear()' is tested
             # dataset=Dataset(filename, 'w', format='NETCDF4')
         

@@ -1010,6 +1010,7 @@ def writerealization(scenarioname,rlz,nrealizations,writename,outrain,writemax,w
     dataset.history = 'Created ' + str(datetime.now())
     dataset.source = 'Realization '+str(rlz)+' from scenario '+scenarioname
     dataset.missing='-9999.'
+    #dataset.bnxbox=bndbox
 
     # fill the netcdf file
     latitudes[:]=latrange[::-1]
@@ -1035,7 +1036,7 @@ def writerealization(scenarioname,rlz,nrealizations,writename,outrain,writemax,w
 def writerealization_nperyear(scenarioname,writename,rlz,nperyear,nrealizations,outrain_large,outtime_large,subrangelat,subrangelon,rlz_order,nsimulations):
     # SAVE outrain AS NETCDF FILE
     #filename=writename+'_SSTrealization'+str(rlz+1)+'_Top'+str(nperyear)+'.nc'
-    dataset=Dataset(scenarioname, 'w', format='NETCDF4')
+    dataset=Dataset(writename, 'w', format='NETCDF4')
 
     # create dimensions
     outlats=dataset.createDimension('latitude',len(subrangelat))
@@ -1071,6 +1072,7 @@ def writerealization_nperyear(scenarioname,writename,rlz,nperyear,nrealizations,
     dataset.history = 'Created ' + str(datetime.now())
     dataset.source = 'Realization '+str(rlz)+' from scenario '+scenarioname
     dataset.missing='-9999.'
+    #dataset.bnxbox=bndbox
 
     # fill the netcdf file
     latitudes[:]=subrangelat[::-1]   # need to check this!
@@ -1618,6 +1620,7 @@ def readrealization(rfile):
     origstormnumber=np.array(infile.variables['original_stormnumber'][:])
     #outstormtime=np.array(infile.variables['stormtimes'][:],dtype='datetime64[m]')
     timeunits=infile.variables['time'].units
+    #bndbox=infile.bnxbox
     
     infile.close()
     return outrain,outtime,outlatitude,outlongitude,outlocx,outlocy,outmax,outreturnperiod,outstormnumber,origstormnumber,timeunits
@@ -1635,10 +1638,11 @@ def readrealization_nperyear(rfile):
         
     if oldfile:
         outrain=np.array(infile.variables['rainrate'][:])
+        outlatitude=np.array(infile.variables['latitude'][:])
     else:
         outrain=np.array(infile.variables['precrate'][:])[:,:,::-1,:]
+        outlatitude=np.array(infile.variables['latitude'][::-1])
     outtime=np.array(infile.variables['time'][:],dtype='datetime64[m]')
-    outlatitude=np.array(infile.variables['latitude'][:])
     outlongitude=np.array(infile.variables['longitude'][:])
     #outlocx=np.array(infile.variables['xlocation'][:])
     #outlocy=np.array(infile.variables['ylocation'][:])
@@ -1648,7 +1652,7 @@ def readrealization_nperyear(rfile):
     #origstormnumber=np.array(infile.variables['original_stormnumber'][:])
     #outstormtime=np.array(infile.variables['stormtimes'][:],dtype='datetime64[m]')
     timeunits=infile.variables['time'].units
-    
+    #bndbox=infile.bnxbox
     infile.close()
     return outrain,outtime,outlatitude,outlongitude,timeunits
 
