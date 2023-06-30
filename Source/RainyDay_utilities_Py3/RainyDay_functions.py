@@ -1165,8 +1165,17 @@ def readnetcdf(rfile,inbounds=False,lassiterfile=False):
             if oldfile:
                 outrain=np.array(infile.variables['rainrate'][:,inbounds[3]:inbounds[2]+1,inbounds[0]:inbounds[1]+1])
                 outlatitude=np.array(infile.variables['latitude'][inbounds[3]:inbounds[2]+1])
+                outtime=np.array(infile.variables['time'][:],dtype='datetime64[m]')
             else:
-                outrain=np.array(infile.variables['precrate'][:,::-1,:][:,inbounds[3]:inbounds[2]+1,inbounds[0]:inbounds[1]+1])
+                if 'precrate' in infile.variables.keys():
+                    outrain=np.array(infile.variables['precrate'][:,::-1,:][:,inbounds[3]:inbounds[2]+1,inbounds[0]:inbounds[1]+1])
+                    outtime=np.array(infile.variables['time'][:],dtype='datetime64[m]')
+                elif 'RAINRATE' in infile.variables.keys(): 
+                     #added for Mo's 'Fusion' dataset:
+                     outrain=np.array(infile.variables['RAINRATE'][:,::-1,:][:,inbounds[3]:inbounds[2]+1,inbounds[0]:inbounds[1]+1])
+                     tempdate=rfile.strip('.nc').split('/')[-1][-8:]
+                     startdate=np.datetime64(tempdate[0:4]+'-'+tempdate[4:6]+'-'+tempdate[6:8]+'T00:00')
+                     outtime=startdate+np.array(infile.variables['time'][:],dtype='timedelta64[h]')
                 outlatitude=np.array(infile.variables['latitude'][::-1][inbounds[3]:inbounds[2]+1])
             outlongitude=np.array(infile.variables['longitude'][inbounds[0]:inbounds[1]+1])         
         else:
@@ -1174,11 +1183,21 @@ def readnetcdf(rfile,inbounds=False,lassiterfile=False):
                 outrain=np.array(infile.variables['rainrate'])
                 outlatitude=np.array(infile.variables['latitude'])
             else:
-                outrain=np.array(infile.variables['precrate'][:,::-1,:])
+                if 'precrate' in infile.variables.keys():
+                    outrain=np.array(infile.variables['precrate'][:,::-1,:])
+                    outtime=np.array(infile.variables['time'][:],dtype='datetime64[m]')
+                elif 'RAINRATE' in infile.variables.keys():
+                    #added for Mo's 'Fusion' dataset:
+                    outrain=np.array(infile.variables['RAINRATE'][:,::-1,:])
+                    tempdate=rfile.strip('.nc').split('/')[-1][-8:]
+                    startdate=np.datetime64(tempdate[0:4]+'-'+tempdate[4:6]+'-'+tempdate[6:8]+'T00:00')
+                    outtime=startdate+np.array(infile.variables['time'][:],dtype='timedelta64[h]')
+                    #outtime=np.array(infile.variables['time'][:],dtype='datetime64[h]')
                 outlatitude=np.array(infile.variables['latitude'][::-1])
             outlongitude=np.array(infile.variables['longitude'][:])
-        outtime=np.array(infile.variables['time'][:],dtype='datetime64[m]')
+        
     else:       # lassiter time!
+        
         print("Lassiter  or FitzGerald style!")
         #for subhourly lassiter files:
         if np.any(inbounds!=False):

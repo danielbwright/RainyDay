@@ -128,8 +128,8 @@ print('''Welcome to RainyDay, a framework for coupling remote sensing precipitat
 start = time.time()
 parameterfile='ttt'
 try:
-    parameterfile=np.str(sys.argv[1])
-    #parameterfile='/Users/daniel/Google_Drive/RainyDay2/Pranavesh_Testing/Madison_example_PP.sst'
+    #parameterfile=np.str(sys.argv[1])
+    parameterfile='/Users/daniel/Google_Drive/RainyDay2/KickapooTesting/Kickapoo_example.sst'
 except:
     sys.exit("You didn't specify an input ('.sst') file!")
 
@@ -1209,30 +1209,30 @@ if CreateCatalog:
             subtime=np.arange(raintime[-1],starttime,-timestep)[::-1]
             temparray=np.squeeze(np.nansum(rainarray[subtimeind,:],axis=1))
             
-            #if np.any(np.greater(temparray,np.min(catmax))): # DBW-added this if statement on 10112022. It seems like this should speed things up!
-            if domain_type=='irregular':
-                rainmax,ycat,xcat=RainyDay.catalogNumba_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask)
-            else:
-                rainmax,ycat,xcat=RainyDay.catalogNumba(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)
-            
-            minind=np.argmin(catmax)
-            tempmin=catmax[minind]
-            if rainmax>tempmin:
-                checksep=intime[k]-cattime[:,-1]
-                if (checksep<timeseparation).any():
-                    checkind=np.where(checksep<timeseparation)
-                    if rainmax>=catmax[checkind]:
-                        catmax[checkind]=rainmax
-                        cattime[checkind,:]=subtime
-                        catx[checkind]=xcat
-                        caty[checkind]=ycat
-                        catrain[checkind,:]=rainarray
-                else:  
-                    catmax[minind]=rainmax
-                    cattime[minind,:]=subtime
-                    catx[minind]=xcat
-                    caty[minind]=ycat
-                    catrain[minind,:]=rainarray
+            if np.any(np.greater(temparray,5.)): # DBW-added this if statement on 0630023. It seems like this should speed things up a little!
+                if domain_type=='irregular':
+                    rainmax,ycat,xcat=RainyDay.catalogNumba_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask)
+                else:
+                    rainmax,ycat,xcat=RainyDay.catalogNumba(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum)
+                
+                minind=np.argmin(catmax)
+                tempmin=catmax[minind]
+                if rainmax>tempmin:
+                    checksep=intime[k]-cattime[:,-1]
+                    if (checksep<timeseparation).any():
+                        checkind=np.where(checksep<timeseparation)
+                        if rainmax>=catmax[checkind]:
+                            catmax[checkind]=rainmax
+                            cattime[checkind,:]=subtime
+                            catx[checkind]=xcat
+                            caty[checkind]=ycat
+                            catrain[checkind,:]=rainarray
+                    else:  
+                        catmax[minind]=rainmax
+                        cattime[minind,:]=subtime
+                        catx[minind]=xcat
+                        caty[minind]=ycat
+                        catrain[minind,:]=rainarray
             
             rainarray[0:-1,:]=rainarray[1:int(catduration*60/rainprop.timeres),:]
             raintime[0:-1]=raintime[1:int(catduration*60/rainprop.timeres)]
