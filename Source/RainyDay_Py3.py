@@ -128,8 +128,8 @@ print('''Welcome to RainyDay, a framework for coupling remote sensing precipitat
 start = time.time()
 parameterfile='ttt'
 try:
-    #parameterfile=np.str(sys.argv[1])
-    parameterfile='/Users/daniel/Google_Drive/RainyDay2/KickapooTesting/Kickapoo_example.sst'
+    parameterfile=np.str(sys.argv[1])
+    #parameterfile='/Users/daniel/Google_Drive/RainyDay2/KickapooTesting/Kickapoo_example.sst'
 except:
     sys.exit("You didn't specify an input ('.sst') file!")
 
@@ -1151,7 +1151,7 @@ if areatype.lower()=="pointlist":
         ptlonlist=ptlonlist[keeppoints]
         npoints_list=len(yind_list)   
     
-        
+    
 
 #################################################################################
 # STEP 1: CREATE STORM CATALOG
@@ -1209,7 +1209,7 @@ if CreateCatalog:
             subtime=np.arange(raintime[-1],starttime,-timestep)[::-1]
             temparray=np.squeeze(np.nansum(rainarray[subtimeind,:],axis=1))
             
-            if np.any(np.greater(temparray,5.)): # DBW-added this if statement on 0630023. It seems like this should speed things up a little!
+            if np.any(np.greater(temparray,0.01)): # DBW-added this if statement on 0630023. It seems like this should speed things up a little!
                 if domain_type=='irregular':
                     rainmax,ycat,xcat=RainyDay.catalogNumba_irregular(temparray,trimmask,xlen,ylen,maskheight,maskwidth,rainsum,domainmask)
                 else:

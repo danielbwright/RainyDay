@@ -1182,6 +1182,7 @@ def readnetcdf(rfile,inbounds=False,lassiterfile=False):
             if oldfile:
                 outrain=np.array(infile.variables['rainrate'])
                 outlatitude=np.array(infile.variables['latitude'])
+                outtime=np.array(infile.variables['time'][:],dtype='datetime64[m]')
             else:
                 if 'precrate' in infile.variables.keys():
                     outrain=np.array(infile.variables['precrate'][:,::-1,:])
